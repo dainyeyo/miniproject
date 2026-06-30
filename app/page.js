@@ -38,10 +38,8 @@ export default function GamePage() {
   const [maxRound, setMaxRound] = useState(5);
   
   // 플레이어 상태
-  const [myScore, setMyScore] = useState(350);
-  const [players, setPlayers] = useState([
-    { name: '꼬마달걀 (나)', avatar: '🥚', score: 350, isMe: true, isOwner: true, status: '그리는 중' }
-  ]);
+  const [myScore, setMyScore] = useState(0);
+  const [players, setPlayers] = useState([]);
   
   // 타이머 및 채팅창 피드 상태
   const [timerSeconds, setTimerSeconds] = useState(45);
@@ -99,6 +97,10 @@ export default function GamePage() {
   const [isHost, setIsHost] = useState(false);
   const [joinCodeInput, setJoinCodeInput] = useState('');
   const [joinCodeError, setJoinCodeError] = useState('');
+  const [playerId, setPlayerId] = useState('');
+  const [isDrawer, setIsDrawer] = useState(false);
+  const [currentDrawerId, setCurrentDrawerId] = useState('');
+  const [canvasDataFromDb, setCanvasDataFromDb] = useState('');
 
   // ==========================================
   // 3. 헬퍼 및 유틸리티 함수 (SRP 원칙)
@@ -236,6 +238,19 @@ export default function GamePage() {
           setAiImageSrc(data.image);
           setAiImageMeta(`"${data.prompt || lastAiPromptRef.current}" — ${new Date().toLocaleTimeString('ko-KR')}`);
           addSystemMsg(`🤖 AI가 새로운 그림 "${data.prompt || lastAiPromptRef.current}" 생성을 마쳤습니다!`);
+          
+          if (isDrawer) {
+            fetch('/api/rooms/action', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                roomCode,
+                playerId,
+                action: 'draw-ai',
+                payload: { aiImageUrl: data.image }
+              })
+            }).catch(err => console.error('Failed to sync AI image:', err));
+          }
         }
         break;
 
@@ -273,6 +288,49 @@ export default function GamePage() {
     }
   };
 
+  const generateAiViaPollinations = async (prompt) => {
+    setAiIsGenerating(true);
+    setAiStatus('generating');
+    setAiStatusText('생성 중 (무료 AI)');
+    try {
+      const encodedPrompt = encodeURIComponent(prompt);
+      const seed = Math.floor(Math.random() * 100000);
+      const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=512&height=512&nologo=true&seed=${seed}`;
+
+      const img = new Image();
+      img.src = imageUrl;
+      img.onload = () => {
+        setAiIsGenerating(false);
+        setAiStatus('ready');
+        setAiStatusText('공공 AI 모드 (서버리스)');
+        setAiImageSrc(imageUrl);
+        setAiImageMeta(`"${prompt}" — Pollinations.ai`);
+        addSystemMsg(`🤖 AI가 새로운 그림 "${prompt}" 생성을 마쳤습니다!`);
+
+        if (isDrawer) {
+          fetch('/api/rooms/action', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              roomCode,
+              playerId,
+              action: 'draw-ai',
+              payload: { aiImageUrl: imageUrl }
+            })
+          }).catch(err => console.error('Failed to sync AI image:', err));
+        }
+      };
+      img.onerror = () => {
+        throw new Error('공공 AI 이미지 로딩에 실패했습니다.');
+      };
+    } catch (err) {
+      setAiIsGenerating(false);
+      setAiStatus('error');
+      setAiStatusText('오류');
+      setAiErrorMsg(err.message);
+    }
+  };
+
   const requestAiGenerate = (prompt) => {
     if (!prompt || aiIsGenerating) return;
 
@@ -284,6 +342,8 @@ export default function GamePage() {
       setAiIsGenerating(true);
       setAiStatus('generating');
       setAiStatusText('생성 중');
+    } else if (aiStatusText.includes('공공 AI')) {
+      generateAiViaPollinations(prompt);
     } else {
       generateAiViaHTTP(prompt, aiSteps);
     }
@@ -316,9 +376,13 @@ export default function GamePage() {
     const serverStatus = await checkAiServerStatus();
 
     if (!serverStatus) {
-      setAiStatus('error');
-      setAiStatusText('서버 연결 실패');
-      setAiErrorMsg('백엔드 서버에 연결할 수 없습니다. backend/ 폴더에서 "python main.py" 명령으로 서버를 먼저 시작하세요.');
+      console.log('로컬 AI 서버가 감지되지 않아 Pollinations.ai API로 대체합니다.');
+      setAiStatus('ready');
+      setAiStatusText('공공 AI 모드 (서버리스)');
+      setAiPrompt(keyword);
+      if (isAiRealtime && keyword) {
+        generateAiViaPollinations(keyword);
+      }
       return;
     }
 
@@ -430,7 +494,7 @@ export default function GamePage() {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [currentScreen, timerSeconds]);
+  }, [currentScreen, timerSeconds, isHost, currentRound, maxRound]);
 
   // AI 연결 생명주기 관리용 Effect
   useEffect(() => {
@@ -439,102 +503,203 @@ export default function GamePage() {
     };
   }, []);
 
+  // 멀티플레이어 DB 상태 조회 Polling Effect
+  useEffect(() => {
+    if (!roomCode || !playerId) return;
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/rooms/status?roomCode=${roomCode}&playerId=${playerId}`);
+        const data = await res.json();
+        
+        if (!res.ok) {
+          clearInterval(pollInterval);
+          alert(data.error || '방에서 퇴장되었거나 존재하지 않는 방입니다.');
+          cleanupAiGenerator();
+          setCurrentScreen('screen-landing');
+          return;
+        }
+
+        const room = data.room;
+        const serverPlayers = data.players;
+
+        // 1. 플레이어 목록 및 본인 권한 업데이트
+        const mappedPlayers = serverPlayers.map(p => ({
+          name: p.nickname,
+          avatar: p.avatar,
+          score: p.score,
+          isMe: p.id === playerId,
+          isOwner: p.is_host,
+          status: p.status === 'drawing' ? '그리는 중' : p.status === 'correct' ? '정답!' : '대기중',
+          id: p.id
+        }));
+        setPlayers(mappedPlayers);
+
+        const me = serverPlayers.find(p => p.id === playerId);
+        if (me) {
+          setMyScore(me.score);
+          setIsHost(me.is_host);
+        }
+
+        // 2. 출제자 상태 업데이트
+        const amIDrawer = room.current_drawer_id === playerId;
+        setIsDrawer(amIDrawer);
+        setCurrentDrawerId(room.current_drawer_id);
+
+        // 3. 화면 상태 전환
+        if (room.status === 'waiting' && currentScreen !== 'screen-waiting' && currentScreen !== 'screen-landing' && currentScreen !== 'screen-join') {
+          setCurrentScreen('screen-waiting');
+        } else if (room.status === 'game' && currentScreen !== 'screen-game') {
+          setCurrentScreen('screen-game');
+          setTimerSeconds(45);
+          setTimerMax(45);
+          if (amIDrawer) {
+            if (selectedMode === 'ai') {
+              triggerAiDrawing(room.current_keyword);
+            }
+          }
+        } else if (room.status === 'result' && currentScreen !== 'screen-result') {
+          setCurrentScreen('screen-result');
+          cleanupAiGenerator();
+        }
+
+        // 4. 세부 라운드 및 그림 데이터 동기화
+        if (room.status === 'game') {
+          setCurrentRound(room.current_round);
+          setMaxRound(room.max_round);
+
+          if (amIDrawer) {
+            setCurrentKeyword(room.current_keyword);
+          } else {
+            setCurrentKeyword('');
+            if (selectedMode === 'ai') {
+              setAiImageSrc(room.ai_image_url || null);
+            } else {
+              setCanvasDataFromDb(room.canvas_data || '');
+            }
+          }
+        }
+
+      } catch (err) {
+        console.error('Polling 상태 업데이트 중 에러 발생:', err);
+      }
+    }, 2000);
+
+    return () => clearInterval(pollInterval);
+  }, [roomCode, playerId, currentScreen, selectedMode]);
+
+  // 비비출제자용 캔버스 동기화 Effect
+  useEffect(() => {
+    if (!isDrawer && canvasRef.current && canvasDataFromDb) {
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+      img.onload = () => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      };
+      img.src = canvasDataFromDb;
+    } else if (!isDrawer && canvasRef.current && !canvasDataFromDb) {
+      clearCanvas();
+    }
+  }, [canvasDataFromDb, isDrawer]);
+
   // ==========================================
   // 6. 게임 진행 흐름 제어 로직 (Game Controller)
   // ==========================================
 
-  // 게임 시작 버튼 이벤트
-  const startGame = () => {
-    // 세션 초기화 클렌징
+  // 게임 시작 버튼 이벤트 (방장만 전송)
+  const startGame = async () => {
     setChatLog([{ type: 'system-msg', text: `🎮 새로운 게임이 시작되었습니다! (모드: ${selectedMode === 'ai' ? 'AI 드로잉 모드' : '일반 모드'})` }]);
-    setCurrentRound(1);
 
-    // 최소 플레이어 수(봇 포함 4명) 충족
-    let currentPlayers = [...players];
-    if (currentPlayers.length === 1) {
-      let bIdx = invitedBotIndex;
-      for (let i = 0; i < 3; i++) {
-        const bot = botPool[bIdx % botPool.length];
-        bIdx++;
-        currentPlayers.push({
-          name: bot.name,
-          avatar: bot.avatar,
-          score: bot.score,
-          status: bot.status,
-          isMe: false,
-          isOwner: false
-        });
-      }
-      setInvitedBotIndex(bIdx);
-      setPlayers(currentPlayers);
-    }
-
-    // 제시어 무작위 선정
     const [randWord] = getRandomWords(wordPool, 1);
-    setCurrentKeyword(randWord);
-    addSystemMsg(`🎨 제시어: [${randWord}]`);
 
-    // 타이머 45초 세팅 후 인게임 전환
-    setTimerSeconds(45);
-    setTimerMax(45);
-    gameRunningRef.current = true;
-    setCurrentScreen('screen-game');
-    
-    // 모드에 따라 분기
-    if (selectedMode === 'ai') {
-      triggerAiDrawing(randWord);
-    } else {
-      triggerBotGameplay(randWord);
+    try {
+      const res = await fetch('/api/rooms/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomCode,
+          playerId,
+          action: 'start-game',
+          payload: { maxRound, keyword: randWord }
+        })
+      });
+      
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '게임 시작 요청에 실패했습니다.');
+
+      setTimerSeconds(45);
+      setTimerMax(45);
+      setCurrentScreen('screen-game');
+    } catch (err) {
+      alert(err.message);
     }
   };
 
-  // 타이머 만료 시 흐름 제어 분기
-  const handleTimerEnd = () => {
-    if (currentScreen === 'screen-game') {
+  // 타이머 만료 시 흐름 제어 (방장 서버 연동 / 게스트 대기)
+  const handleTimerEnd = async () => {
+    if (currentScreen === 'screen-game' && isHost) {
       if (currentRound < maxRound) {
-        addSystemMsg(`⏳ 라운드 종료! 2초 뒤 다음 라운드로 전환합니다.`);
+        addSystemMsg(`⏳ 라운드 종료! 다음 라운드로 전환합니다.`);
         cleanupAiGenerator();
-        setTimeout(() => {
-          setCurrentRound(prev => {
-            const nextRound = prev + 1;
-            // 새 제시어 재할당
-            const [newWord] = getRandomWords(wordPool, 1);
-            setCurrentKeyword(newWord);
-            clearCanvas();
-            setTimerSeconds(45);
-            setTimerMax(45);
-            addSystemMsg(`🎨 Round ${nextRound} 시작! 제시어를 확인해 주세요.`);
-            
-            if (selectedMode === 'ai') {
-              triggerAiDrawing(newWord);
-            } else {
-              triggerBotGameplay(newWord);
-            }
-            return nextRound;
+        
+        const [newWord] = getRandomWords(wordPool, 1);
+        
+        try {
+          await fetch('/api/rooms/action', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              roomCode,
+              playerId,
+              action: 'next-round',
+              payload: { nextRound: currentRound + 1, keyword: newWord }
+            })
           });
-        }, 2000);
+        } catch (err) {
+          console.error('Next round API trigger failed:', err);
+        }
       } else {
         addSystemMsg('🏆 모든 라운드가 종료되었습니다! 최종 결과를 발표합니다.');
         cleanupAiGenerator();
-        setTimeout(() => {
-          setCurrentScreen('screen-result');
-        }, 2000);
+        try {
+          await fetch('/api/rooms/action', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              roomCode,
+              playerId,
+              action: 'game-over'
+            })
+          });
+        } catch (err) {
+          console.error('Game over API trigger failed:', err);
+        }
       }
     }
   };
 
-  // 대기실 복귀 리셋
-  const goHome = () => {
+  // 대기실 복귀 리셋 (방장의 경우 전체 동기화)
+  const goHome = async () => {
     cleanupAiGenerator();
     setChatLog([{ type: 'system-msg', text: '대기실로 돌아왔습니다. 다음 게임을 준비해 주세요.' }]);
-    setPlayers(prev => prev.map(p => {
-      if (p.isMe) {
-        setMyScore(350);
-        return { ...p, score: 350, status: '준비완료' };
+    
+    if (isHost) {
+      try {
+        await fetch('/api/rooms/action', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            roomCode,
+            playerId,
+            action: 'go-lobby'
+          })
+        });
+      } catch (err) {
+        console.error('Go lobby API trigger failed:', err);
       }
-      return { ...p, score: Math.floor(Math.random() * 200) + 150, status: '준비완료' };
-    }));
-    setCurrentRound(1);
+    }
     setCurrentScreen('screen-waiting');
   };
 
@@ -542,14 +707,27 @@ export default function GamePage() {
   // 6.5. 방 생성 / 초대 코드 참여 핸들러
   // ==========================================
 
-  // 방 만들기: 랜덤 코드 생성 후 대기실 입장 (방장)
-  const handleCreateRoom = () => {
+  // 방 만들기: Neon DB 생성 후 대기실 입장
+  const handleCreateRoom = async () => {
     if (!nickname.trim()) return;
-    const code = generateRoomCode();
-    setRoomCode(code);
-    setIsHost(true);
-    setChatLog([{ type: 'system-msg', text: `🎮 방이 생성되었습니다! 초대 코드: [${code}]` }]);
-    setCurrentScreen('screen-waiting');
+    try {
+      const res = await fetch('/api/rooms/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nickname, avatar: '🥚' })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '방 생성에 실패했습니다.');
+
+      setRoomCode(data.roomCode);
+      setPlayerId(data.playerId);
+      setIsHost(true);
+      setMyScore(0);
+      setChatLog([{ type: 'system-msg', text: `🎮 방이 생성되었습니다! 초대 코드: [${data.roomCode}]` }]);
+      setCurrentScreen('screen-waiting');
+    } catch (err) {
+      alert(err.message);
+    }
   };
 
   // 초대 코드 입력 화면으로 이동
@@ -559,18 +737,45 @@ export default function GamePage() {
     setCurrentScreen('screen-join');
   };
 
-  // 초대 코드 제출: 형식 검증 후 대기실 입장 (게스트)
-  const handleJoinSubmit = (e) => {
+  // 초대 코드 제출: Neon DB 검증 후 대기실 입장
+  const handleJoinSubmit = async (e) => {
     e.preventDefault();
     const code = joinCodeInput.trim().toUpperCase();
     if (!/^EGGG-[A-Z0-9]{4}$/.test(code)) {
       setJoinCodeError('올바른 초대 코드 형식이 아닙니다. (예: EGGG-A4X9)');
       return;
     }
-    setRoomCode(code);
-    setIsHost(false);
-    setChatLog([{ type: 'system-msg', text: `🔑 초대 코드 [${code}] 로 방에 입장했습니다!` }]);
-    setCurrentScreen('screen-waiting');
+    
+    try {
+      const res = await fetch('/api/rooms/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomCode: code, nickname, avatar: '🐥' })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '방 입장에 실패했습니다.');
+
+      setRoomCode(data.roomCode);
+      setPlayerId(data.playerId);
+      setIsHost(false);
+      setMyScore(0);
+      setChatLog([{ type: 'system-msg', text: `🔑 초대 코드 [${data.roomCode}] 로 방에 입장했습니다!` }]);
+      
+      const dbPlayers = data.players.map(p => ({
+        name: p.nickname,
+        avatar: p.avatar,
+        score: p.score,
+        isMe: p.id === data.playerId,
+        isOwner: p.is_host,
+        status: p.status === 'drawing' ? '그리는 중' : p.status === 'correct' ? '정답!' : '대기중',
+        id: p.id
+      }));
+      setPlayers(dbPlayers);
+
+      setCurrentScreen('screen-waiting');
+    } catch (err) {
+      setJoinCodeError(err.message);
+    }
   };
 
   // ==========================================
@@ -635,21 +840,40 @@ export default function GamePage() {
   // ==========================================
   // 8. 클라이언트 채팅 메시지 송신 & 정답 매칭
   // ==========================================
-  const handleChatSubmit = (e) => {
+  const handleChatSubmit = async (e) => {
     e.preventDefault();
     if (!chatInput.trim()) return;
 
-    const normalizedInput = normalizeText(chatInput);
-    const normalizedKeyword = normalizeText(currentKeyword);
+    if (currentScreen === 'screen-game') {
+      if (isDrawer) {
+        appendFeed(nickname, chatInput, 'chat-msg');
+        setChatInput('');
+        return;
+      }
 
-    if (normalizedInput === normalizedKeyword && currentScreen === 'screen-game') {
-      appendFeed(nickname, chatInput, 'correct-answer');
-      addSystemMsg(`🎉 축하합니다! 정답 [${currentKeyword}]을(를) 맞혔습니다! (+100 pts)`);
-      setMyScore(prev => prev + 100);
-      setPlayers(prev => prev.map(p => {
-        if (p.isMe) return { ...p, score: p.score + 100 };
-        return p;
-      }));
+      try {
+        const res = await fetch('/api/rooms/action', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            roomCode,
+            playerId,
+            action: 'guess',
+            payload: { guess: chatInput }
+          })
+        });
+        const data = await res.json();
+        
+        if (res.ok && data.isCorrect) {
+          appendFeed(nickname, chatInput, 'correct-answer');
+          addSystemMsg(`🎉 축하합니다! 정답 [${data.keyword}]을(를) 맞혔습니다! (+100 pts)`);
+        } else {
+          appendFeed(nickname, chatInput, 'chat-msg');
+        }
+      } catch (err) {
+        console.error('Failed to submit guess:', err);
+        appendFeed(nickname, chatInput, 'chat-msg');
+      }
     } else {
       appendFeed(nickname, chatInput, 'chat-msg');
     }
@@ -704,6 +928,22 @@ export default function GamePage() {
 
   const handleDrawingEnd = () => {
     isDrawingRef.current = false;
+
+    if (isDrawer && canvasRef.current) {
+      const canvas = canvasRef.current;
+      const canvasData = canvas.toDataURL();
+
+      fetch('/api/rooms/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomCode,
+          playerId,
+          action: 'draw-canvas',
+          payload: { canvasData }
+        })
+      }).catch(err => console.error('Failed to sync canvas:', err));
+    }
   };
 
   // ==========================================
@@ -929,12 +1169,20 @@ export default function GamePage() {
                 ◀ 뒤로 (Lobby)
               </button>
               <div className="footer-actions-right">
-                <button className="btn-secondary btn-bounce" onClick={inviteBot}>
-                  ➕ 초대하기 (봇 추가)
-                </button>
-                <button className="btn-primary btn-bounce" onClick={startGame}>
-                  ▶ 게임 시작 (Start)
-                </button>
+                {isHost ? (
+                  <>
+                    <button className="btn-secondary btn-bounce" onClick={inviteBot}>
+                      ➕ 초대하기 (봇 추가)
+                    </button>
+                    <button className="btn-primary btn-bounce" onClick={startGame}>
+                      ▶ 게임 시작 (Start)
+                    </button>
+                  </>
+                ) : (
+                  <span style={{ fontSize: '0.95rem', color: 'var(--color-gray-dark)', fontWeight: 700, alignSelf: 'center', marginRight: '10px' }}>
+                    방장이 게임을 시작하기를 기다리는 중... ⏳
+                  </span>
+                )}
               </div>
             </footer>
 
@@ -1056,93 +1304,95 @@ export default function GamePage() {
                     </div>
 
                     {/* 하단: 프롬프트 입력 + 옵션 */}
-                    <div className="ai-gen-controls">
-                      <div className="ai-gen-prompt-row">
-                        <textarea
-                          id="ai-prompt-input"
-                          placeholder="원하는 이미지를 설명하세요&#10;예: a cute fried egg character, kawaii style, pastel colors"
-                          maxLength={500}
-                          aria-label="이미지 생성 프롬프트 입력"
-                          rows={2}
-                          value={aiPrompt}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setAiPrompt(val);
-                            
-                            // 실시간 자동 생성 처리 (Debounced)
-                            if (aiDebounceTimerRef.current) clearTimeout(aiDebounceTimerRef.current);
-                            aiDebounceTimerRef.current = setTimeout(() => {
-                              if (isAiRealtime && val.trim()) {
-                                requestAiGenerate(val.trim());
-                              }
-                            }, AI_CONFIG.DEBOUNCE_MS);
-                          }}
-                          onKeyDown={(e) => {
-                            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-                              e.preventDefault();
-                              requestAiGenerate(aiPrompt.trim());
-                            }
-                          }}
-                        ></textarea>
-                        <button 
-                          id="ai-generate-btn" 
-                          className="btn-primary ai-gen-btn" 
-                          aria-label="이미지 생성"
-                          disabled={aiIsGenerating}
-                          onClick={() => {
-                            const prompt = aiPrompt.trim();
-                            if (!prompt) {
-                              setAiErrorMsg('프롬프트를 입력해주세요.');
-                              return;
-                            }
-                            requestAiGenerate(prompt);
-                          }}
-                        >
-                          <span id="ai-btn-icon">{aiIsGenerating ? '⏳' : '⚡'}</span>
-                          <span id="ai-btn-text">{aiIsGenerating ? '생성 중...' : '생성'}</span>
-                        </button>
-                      </div>
-
-                      <div className="ai-gen-options-row">
-                        {/* 실시간 자동 생성 토글 */}
-                        <label class="ai-gen-toggle-label">
-                          <input 
-                            type="checkbox" 
-                            id="ai-realtime-toggle" 
-                            checked={isAiRealtime} 
+                    {isDrawer && (
+                      <div className="ai-gen-controls">
+                        <div className="ai-gen-prompt-row">
+                          <textarea
+                            id="ai-prompt-input"
+                            placeholder="원하는 이미지를 설명하세요&#10;예: a cute fried egg character, kawaii style, pastel colors"
+                            maxLength={500}
+                            aria-label="이미지 생성 프롬프트 입력"
+                            rows={2}
+                            value={aiPrompt}
                             onChange={(e) => {
-                              const checked = e.target.checked;
-                              setIsAiRealtime(checked);
-                              if (checked && aiPrompt.trim()) {
+                              const val = e.target.value;
+                              setAiPrompt(val);
+                              
+                              // 실시간 자동 생성 처리 (Debounced)
+                              if (aiDebounceTimerRef.current) clearTimeout(aiDebounceTimerRef.current);
+                              aiDebounceTimerRef.current = setTimeout(() => {
+                                if (isAiRealtime && val.trim()) {
+                                  requestAiGenerate(val.trim());
+                                }
+                              }, AI_CONFIG.DEBOUNCE_MS);
+                            }}
+                            onKeyDown={(e) => {
+                              if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                                e.preventDefault();
                                 requestAiGenerate(aiPrompt.trim());
                               }
                             }}
-                          />
-                          <span className="ai-gen-toggle-switch"></span>
-                          <span>실시간</span>
-                        </label>
-
-                        {/* Steps 슬라이더 */}
-                        <div className="ai-gen-steps-group">
-                          <span>Steps</span>
-                          <input 
-                            type="range" 
-                            id="ai-steps-slider" 
-                            min="1" 
-                            max="4" 
-                            value={aiSteps} 
-                            step="1"
-                            onChange={(e) => setAiSteps(parseInt(e.target.value, 10))}
-                          />
-                          <span className="ai-gen-steps-value" id="ai-steps-display">{aiSteps}</span>
+                          ></textarea>
+                          <button 
+                            id="ai-generate-btn" 
+                            className="btn-primary ai-gen-btn" 
+                            aria-label="이미지 생성"
+                            disabled={aiIsGenerating}
+                            onClick={() => {
+                              const prompt = aiPrompt.trim();
+                              if (!prompt) {
+                                setAiErrorMsg('프롬프트를 입력해주세요.');
+                                return;
+                              }
+                              requestAiGenerate(prompt);
+                            }}
+                          >
+                            <span id="ai-btn-icon">{aiIsGenerating ? '⏳' : '⚡'}</span>
+                            <span id="ai-btn-text">{aiIsGenerating ? '생성 중...' : '생성'}</span>
+                          </button>
                         </div>
 
-                        {/* 글자 수 */}
-                        <span className="ai-gen-char-count" id="ai-char-count">
-                          {aiPrompt.length} / 500
-                        </span>
+                        <div className="ai-gen-options-row">
+                          {/* 실시간 자동 생성 토글 */}
+                          <label class="ai-gen-toggle-label">
+                            <input 
+                              type="checkbox" 
+                              id="ai-realtime-toggle" 
+                              checked={isAiRealtime} 
+                              onChange={(e) => {
+                                const checked = e.target.checked;
+                                setIsAiRealtime(checked);
+                                if (checked && aiPrompt.trim()) {
+                                  requestAiGenerate(aiPrompt.trim());
+                                }
+                              }}
+                            />
+                            <span className="ai-gen-toggle-switch"></span>
+                            <span>실시간</span>
+                          </label>
+
+                          {/* Steps 슬라이더 */}
+                          <div className="ai-gen-steps-group">
+                            <span>Steps</span>
+                            <input 
+                              type="range" 
+                              id="ai-steps-slider" 
+                              min="1" 
+                              max="4" 
+                              value={aiSteps} 
+                              step="1"
+                              onChange={(e) => setAiSteps(parseInt(e.target.value, 10))}
+                            />
+                            <span className="ai-gen-steps-value" id="ai-steps-display">{aiSteps}</span>
+                          </div>
+
+                          {/* 글자 수 */}
+                          <span className="ai-gen-char-count" id="ai-char-count">
+                            {aiPrompt.length} / 500
+                          </span>
+                        </div>
                       </div>
-                    </div>
+                    )}
 
                   </div>
                 </div>
@@ -1152,8 +1402,8 @@ export default function GamePage() {
                   <div className="canvas-wrapper">
                     {/* 제시어 오버레이 카드 */}
                     <div className="keyword-box canvas-keyword-overlay">
-                      <span className="keyword-label">제시어</span>
-                      <span className="keyword-text">{currentKeyword}</span>
+                      <span className="keyword-label">{isDrawer ? '제시어' : '맞혀보세요!'}</span>
+                      <span className="keyword-text">{isDrawer ? currentKeyword : '❓❓❓'}</span>
                     </div>
                     
                     <canvas
@@ -1169,37 +1419,39 @@ export default function GamePage() {
                     />
                   </div>
 
-                  <div className="drawing-tools">
-                    <div className="tool-group colors">
-                      {['#2D3748', '#E53E3E', '#DD6B20', '#FFD23F', '#38A169', '#3182CE', '#9F7AEA', '#FF69B4'].map((col) => (
-                        <button
-                          key={col}
-                          className={`color-dot ${brushColor === col && !isEraser ? 'active' : ''}`}
-                          style={{ backgroundColor: col }}
-                          onClick={() => { setBrushColor(col); setIsEraser(false); }}
-                        />
-                      ))}
-                    </div>
-                    
-                    <div className="tool-group brush-sizes">
-                      {[{ size: 4, label: 'small' }, { size: 10, label: 'medium' }, { size: 20, label: 'large' }].map((s) => (
-                        <button
-                          key={s.size}
-                          className={`size-dot size-${s.label} ${brushSize === s.size ? 'active' : ''}`}
-                          onClick={() => setBrushSize(s.size)}
-                        />
-                      ))}
-                    </div>
+                  {isDrawer && (
+                    <div className="drawing-tools">
+                      <div className="tool-group colors">
+                        {['#2D3748', '#E53E3E', '#DD6B20', '#FFD23F', '#38A169', '#3182CE', '#9F7AEA', '#FF69B4'].map((col) => (
+                          <button
+                            key={col}
+                            className={`color-dot ${brushColor === col && !isEraser ? 'active' : ''}`}
+                            style={{ backgroundColor: col }}
+                            onClick={() => { setBrushColor(col); setIsEraser(false); }}
+                          />
+                        ))}
+                      </div>
+                      
+                      <div className="tool-group brush-sizes">
+                        {[{ size: 4, label: 'small' }, { size: 10, label: 'medium' }, { size: 20, label: 'large' }].map((s) => (
+                          <button
+                            key={s.size}
+                            className={`size-dot size-${s.label} ${brushSize === s.size ? 'active' : ''}`}
+                            onClick={() => setBrushSize(s.size)}
+                          />
+                        ))}
+                      </div>
 
-                    <div className="tool-group action-tools">
-                      <button className={`btn-secondary ${isEraser ? 'active' : ''}`} onClick={() => setIsEraser(true)}>
-                        🧹 지우개
-                      </button>
-                      <button className="btn-secondary" onClick={clearCanvas}>
-                        🗑️ 전체 지우기
-                      </button>
+                      <div className="tool-group action-tools">
+                        <button className={`btn-secondary ${isEraser ? 'active' : ''}`} onClick={() => setIsEraser(true)}>
+                          🧹 지우개
+                        </button>
+                        <button className="btn-secondary" onClick={clearCanvas}>
+                          🗑️ 전체 지우기
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               )}
             </section>
