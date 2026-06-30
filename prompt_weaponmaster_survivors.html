@@ -1,0 +1,1957 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prompt WeaponMaster: Survivors</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800;900&family=Noto+Sans+KR:wght@300;400;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Inter', 'Noto Sans KR', sans-serif;
+            background-color: #030712;
+            color: #f3f4f6;
+            overflow: hidden;
+            user-select: none;
+        }
+        /* Custom dynamic scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0b0f19;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #374151;
+            border-radius: 3px;
+        }
+        
+        .glow-indigo {
+            box-shadow: 0 0 20px rgba(99, 102, 241, 0.4);
+        }
+        .glow-red {
+            box-shadow: 0 0 20px rgba(239, 68, 68, 0.4);
+        }
+        
+        /* Level Up Animation Portal overlay */
+        @keyframes portalRotate {
+            0% { transform: rotate(0deg) scale(1); }
+            50% { transform: rotate(180deg) scale(1.05); }
+            100% { transform: rotate(360deg) scale(1); }
+        }
+        .portal-spin {
+            animation: portalRotate 10s linear infinite;
+        }
+    </style>
+</head>
+<body class="w-screen h-screen flex flex-col">
+
+    <header class="bg-gray-950 border-b border-gray-900 px-6 py-3 flex flex-wrap items-center justify-between gap-4 z-20 shadow-lg shrink-0">
+        <div class="flex items-center gap-3">
+            <div class="bg-gradient-to-tr from-emerald-600 to-indigo-500 p-2 rounded-xl shadow-lg shadow-emerald-500/20">
+                <i class="fa-solid fa-code text-lg text-white"></i>
+            </div>
+            <div>
+                <h1 class="text-lg font-black tracking-wider bg-gradient-to-r from-emerald-400 via-teal-400 to-indigo-400 bg-clip-text text-transparent">
+                    PROMPT VIBECRAFT: SURVIVORS
+                </h1>
+                <p class="text-[10px] text-gray-400 font-medium">프롬프트 엔지니어링 바이브 코딩 아레나</p>
+            </div>
+        </div>
+
+        <!-- Real-time Game HUD Indicators -->
+        <div class="flex items-center gap-4 flex-wrap">
+            <!-- Stage Timer -->
+            <div class="bg-gray-900 border border-gray-800 px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-2 text-gray-300">
+                <i class="fa-solid fa-clock text-rose-400"></i>
+                <span id="gameTimer">00:00</span>
+            </div>
+
+            <!-- Monster Kills Count -->
+            <div class="bg-gray-900 border border-gray-800 px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-2 text-gray-300">
+                <i class="fa-solid fa-skull text-red-400"></i>
+                <span id="killCounter">0</span>
+            </div>
+
+            <!-- Level Badge -->
+            <div class="bg-indigo-950/60 border border-indigo-900 px-3 py-1 rounded-lg text-xs font-bold text-indigo-300 flex items-center gap-1.5">
+                <span>LV.</span>
+                <span id="playerLevel" class="text-white font-extrabold text-sm">1</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Experience Bar (XP Track) -->
+    <div class="w-full h-2.5 bg-gray-900 border-b border-gray-950 relative z-10 shrink-0">
+        <div id="xpBarFill" class="h-full bg-gradient-to-r from-emerald-500 via-teal-500 to-indigo-500 shadow-lg shadow-emerald-500/30 transition-all duration-300" style="width: 0%"></div>
+    </div>
+
+    <!-- Main Dynamic Space (Canvas & Weapon Status Panels) -->
+    <main class="flex-1 flex overflow-hidden relative">
+
+        <aside class="w-72 bg-gray-950 border-r border-gray-900 p-4 flex flex-col gap-4 hidden md:flex shrink-0 z-10">
+            <div class="flex items-center justify-between border-b border-gray-900 pb-2">
+                <h2 class="text-xs font-black text-gray-400 flex items-center gap-1.5 uppercase tracking-wider">
+                    <i class="fa-solid fa-shield-halved text-emerald-400"></i> 장착된 AI 무기 무기고
+                </h2>
+                <span id="weaponCount" class="text-[10px] font-bold bg-indigo-950 text-indigo-300 px-2 py-0.5 rounded-full">0/5</span>
+            </div>
+
+            <!-- Weapon Cards Deck Container -->
+            <div id="weaponsDeck" class="flex-1 overflow-y-auto space-y-3 pr-1">
+                <!-- Initial Empty Helper -->
+                <div id="deckEmptyState" class="h-40 flex flex-col items-center justify-center text-center p-4 border border-dashed border-gray-800 rounded-xl gap-2 text-gray-500">
+                    <i class="fa-solid fa-circle-question text-2xl"></i>
+                    <p class="text-[11px] font-medium leading-relaxed">아직 장착된 특수 무기가 없습니다.<br>레벨업 후 프레임을 연성하세요!</p>
+                </div>
+            </div>
+
+            <div class="bg-gray-900/40 border border-gray-900 p-3 rounded-xl text-[10px] text-gray-400 leading-relaxed">
+                <span class="font-bold text-gray-200 block mb-1">💡 플레이 가이드:</span>
+                • 방향키 또는 <b>WASD</b> 키로 움직입니다.<br>
+                • 몬스터를 물리치고 떨어지는 <b>녹색 구체(XP)</b>를 모으세요.<br>
+                • 레벨업을 달성하면 강력한 프롬프트 무기를 마음껏 디자인할 수 있습니다!
+            </div>
+        </aside>
+
+        <!-- Dynamic Game Board (The Sandbox Canvas) -->
+        <section class="flex-1 relative flex flex-col items-center justify-center bg-slate-950">
+            <!-- Game Canvas Container -->
+            <div class="w-full h-full relative" id="canvasContainer">
+                <canvas id="gameCanvas" class="w-full h-full block cursor-crosshair"></canvas>
+
+                <!-- Touch Device Virtual Joystick Base (Only displayed/active on touch interactions) -->
+                <div id="touchJoystick" class="absolute bottom-12 left-12 w-28 h-28 bg-white/5 border border-white/10 rounded-full hidden items-center justify-center touch-none pointer-events-none">
+                    <div id="joystickKnob" class="w-10 h-10 bg-indigo-500/80 rounded-full shadow-lg shadow-indigo-500/20"></div>
+                </div>
+            </div>
+
+            <!-- Welcome overlay screen -->
+            <div id="startScreen" class="absolute inset-0 bg-gray-950/95 backdrop-blur-md z-30 flex flex-col items-center justify-center p-6 text-center">
+                <div class="max-w-md w-full bg-gray-900 border border-gray-800 rounded-2xl p-6 shadow-2xl relative overflow-hidden">
+                    <div class="absolute -top-10 -left-10 w-40 h-40 bg-emerald-600/10 rounded-full filter blur-xl"></div>
+                    <div class="absolute -bottom-10 -right-10 w-40 h-40 bg-indigo-600/10 rounded-full filter blur-xl"></div>
+                    
+                    <div class="relative z-10 flex flex-col items-center gap-4">
+                        <div class="w-16 h-16 bg-gradient-to-tr from-emerald-500 to-indigo-500 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                            <i class="fa-solid fa-gamepad text-3xl text-white"></i>
+                        </div>
+                        <div>
+                            <h2 class="text-2xl font-black tracking-tight text-white">PROMPT VIBECRAFT</h2>
+                            <p class="text-xs text-emerald-400 font-bold tracking-widest mt-1 uppercase">Vibe Coding Survivors</p>
+                        </div>
+                        <p class="text-xs text-gray-400 leading-relaxed mt-2">
+                            몬스터를 처치하여 레벨업을 진행하세요. 매 레벨업 순간마다 주어지는 <b>바이브 코딩 퀘스트 제약조건</b>을 충족하는 정교한 프롬프트를 작성하여 미션을 완료하고, 높은 동기화율 버프를 획득하여 아레나를 정복해 보세요!
+                        </p>
+
+                        <!-- Basic default weapon setup choosing -->
+                        <div class="w-full mt-4 flex flex-col gap-2">
+                            <span class="text-[10px] text-gray-500 font-bold uppercase tracking-widest text-left">기본 무기 선택 (Choose Initial Strike)</span>
+                            <div class="grid grid-cols-2 gap-2">
+                                <button onclick="selectInitialWeapon('sword')" class="p-3 bg-indigo-950/40 hover:bg-indigo-900/60 border border-indigo-800 text-left rounded-xl transition-all flex items-center gap-3 group text-left">
+                                    <span class="text-xl">🗡️</span>
+                                    <div>
+                                        <h4 class="text-xs font-bold text-gray-200 group-hover:text-white">강철 훈련용 목검</h4>
+                                        <p class="text-[9px] text-gray-400">무난한 주변 베기 공격</p>
+                                    </div>
+                                </button>
+                                <button onclick="selectInitialWeapon('wand')" class="p-3 bg-indigo-950/40 hover:bg-indigo-900/60 border border-indigo-800 text-left rounded-xl transition-all flex items-center gap-3 group text-left">
+                                    <span class="text-xl">✨</span>
+                                    <div>
+                                        <h4 class="text-xs font-bold text-gray-200 group-hover:text-white">마법 견습생 지팡이</h4>
+                                        <p class="text-[9px] text-gray-400">가까운 적 무작위 유도 탄두</p>
+                                    </div>
+                                </button>
+                            </div>
+                        </div>
+
+                        <button onclick="startGame()" class="w-full py-3.5 bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/40 transition-all mt-4 transform active:scale-95">
+                            스테이지 시작하기 (START GAME)
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- LEVEL UP! AI Forge Prompt Portal overlay modal (Pauses game loop) -->
+            <div id="forgePortalModal" class="absolute inset-0 bg-black/90 backdrop-blur-md z-40 hidden flex-col items-center justify-center p-6 text-center">
+                <div class="max-w-lg w-full bg-gray-900 border border-gray-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden">
+                    
+                    <!-- Cosmic rotating portal effect background -->
+                    <div class="absolute -top-24 left-1/2 -translate-x-1/2 w-80 h-80 bg-gradient-to-tr from-emerald-500/20 via-teal-500/20 to-indigo-500/20 rounded-full portal-spin filter blur-xl pointer-events-none"></div>
+
+                    <div class="relative z-10 flex flex-col items-center gap-5">
+                        <div class="relative flex items-center gap-2">
+                            <span class="text-4xl animate-bounce">💻</span>
+                            <div class="text-left">
+                                <span class="bg-emerald-500/20 text-emerald-400 text-[9px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider animate-pulse">Level Up!</span>
+                                <h2 class="text-xl font-black text-white tracking-wide">AI 에이전트 바이브 연성소</h2>
+                            </div>
+                        </div>
+                        
+                        <!-- Quest reminder inside Forge modal -->
+                        <div id="forgeQuestCard" class="w-full bg-slate-950 border border-indigo-950/60 p-3.5 rounded-xl text-left">
+                            <span class="text-[9px] text-emerald-400 font-bold uppercase tracking-widest block mb-0.5">미션 퀘스트 조건 (Vibe Coding Mission)</span>
+                            <h4 id="forgeQuestTitle" class="text-xs font-black text-gray-200">빛의 궤적</h4>
+                            <p id="forgeQuestDesc" class="text-[10px] text-gray-400 mt-1 leading-relaxed"></p>
+                        </div>
+
+                        <!-- User Prompt Field -->
+                        <div class="w-full flex flex-col gap-2">
+                            <textarea id="weaponPromptInput" rows="3" placeholder="예: '주변을 빠르게 회전하며 보랏빛 어둠 속성 가시를 발사하는 저주의 심연 낫', 'A golden rifle firing lightning beams at nearby targets'" class="w-full bg-gray-950 border border-gray-850 rounded-xl p-3 text-xs focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors placeholder-gray-600 resize-none text-gray-200"></textarea>
+                            
+                            <!-- Prompt Helpers -->
+                            <div class="flex flex-wrap gap-1.5 justify-center mt-1">
+                                <button onclick="fillPresetPrompt('fire_orbit')" class="text-[10px] bg-gray-950 hover:bg-indigo-950 border border-gray-800 text-gray-400 hover:text-indigo-300 px-2.5 py-1 rounded-md transition-all">
+                                    🔥 지옥염화 파이어실드
+                                </button>
+                                <button onclick="fillPresetPrompt('lightning_chain')" class="text-[10px] bg-gray-950 hover:bg-indigo-950 border border-gray-800 text-gray-400 hover:text-indigo-300 px-2.5 py-1 rounded-md transition-all">
+                                    ⚡ 뇌신룡의 전뇌 레이저
+                                </button>
+                                <button onclick="fillPresetPrompt('dark_scythe')" class="text-[10px] bg-gray-950 hover:bg-indigo-950 border border-gray-800 text-gray-400 hover:text-indigo-300 px-2.5 py-1 rounded-md transition-all">
+                                    💀 사신 흑암의 회전낫
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Compile Console Terminal Visualizer -->
+                        <div id="compilerTerminal" class="w-full bg-black border border-gray-800 rounded-xl p-4 text-left font-mono text-[10px] text-emerald-400 hidden h-36 overflow-y-auto leading-relaxed shadow-inner">
+                            <!-- Compilation steps populated via JS -->
+                        </div>
+
+                        <!-- Forge Button -->
+                        <button id="forgeConfirmBtn" onclick="forgeWeaponFromPrompt()" class="w-full py-4 bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white font-extrabold text-xs rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 transform active:scale-95">
+                            <i class="fa-solid fa-code-merge animate-pulse"></i> 바이브 컴파일 시작 (COMPILE PROMPT)
+                        </button>
+
+                        <!-- Loading Indicator within Forge -->
+                        <div id="forgeLoading" class="hidden w-full flex flex-col items-center gap-2 mt-2">
+                            <div class="w-10 h-10 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin"></div>
+                            <span class="text-xs text-indigo-400 font-bold" id="forgeLoadingText">무기의 마법 궤적 설계 코드를 컴파일 중...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Game Over / Victory Modal overlay -->
+            <div id="gameResultOverlay" class="absolute inset-0 bg-black/90 backdrop-blur-md z-40 hidden flex-col items-center justify-center p-6 text-center">
+                <div class="max-w-md w-full bg-gray-900 border border-gray-800 rounded-2xl p-8 shadow-2xl">
+                    <span id="resultIcon" class="text-6xl block mb-4 animate-bounce">🏆</span>
+                    <h3 id="resultTitle" class="text-2xl font-black text-white uppercase tracking-wider">STAGE CLEARED!</h3>
+                    <p id="resultSubtitle" class="text-xs text-gray-400 mt-2 leading-relaxed">
+                        최강 보스를 처치하고 프롬프트 연성 대가의 영광을 증명했습니다!
+                    </p>
+
+                    <!-- Stats Recaps -->
+                    <div class="grid grid-cols-2 gap-3 my-5 bg-gray-950 p-4 rounded-xl border border-gray-800">
+                        <div class="text-center">
+                            <span class="text-[10px] text-gray-500 block font-bold uppercase tracking-widest">생존 시간</span>
+                            <span id="recapTime" class="text-sm font-black text-indigo-400">01:30</span>
+                        </div>
+                        <div class="text-center">
+                            <span class="text-[10px] text-gray-500 block font-bold uppercase tracking-widest">무찌른 괴수</span>
+                            <span id="recapKills" class="text-sm font-black text-rose-400">120</span>
+                        </div>
+                    </div>
+
+                    <button onclick="restartGame()" class="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-rose-600 hover:from-indigo-500 hover:to-rose-500 text-white font-extrabold text-xs rounded-xl transition-all shadow-lg">
+                        처음부터 다시 도전하기
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Right Sidebar: Vibe Control Center Panel -->
+        <aside class="w-80 bg-gray-950 border-l border-gray-900 p-4 flex flex-col gap-4 hidden lg:flex shrink-0 z-10">
+            <div class="flex items-center justify-between border-b border-gray-900 pb-2">
+                <h2 class="text-xs font-black text-gray-400 flex items-center gap-1.5 uppercase tracking-wider">
+                    <i class="fa-solid fa-terminal text-emerald-400"></i> 바이브 코딩 제어 센터
+                </h2>
+                <span id="questStatus" class="text-[9px] font-black bg-emerald-950 text-emerald-400 px-2 py-0.5 rounded-full">ACTIVE</span>
+            </div>
+
+            <!-- Canvas/Gemini Authentication Settings -->
+            <div class="flex flex-col gap-1.5 bg-gray-900 border border-gray-800 p-3 rounded-xl text-xs">
+                <div class="flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span class="text-gray-300 text-[10px] font-bold">API Mode (Optional)</span>
+                </div>
+                <input type="password" id="apiKeyInput" placeholder="Gemini API 키 입력" class="w-full bg-gray-950 border border-gray-700 rounded px-2 py-1.5 focus:outline-none focus:border-emerald-500 text-[10px] text-gray-200">
+            </div>
+
+            <!-- Active Quest Card -->
+            <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-4 flex flex-col gap-2">
+                <span class="text-[9px] text-emerald-400 font-bold tracking-widest uppercase">현재 연성 퀘스트</span>
+                <h3 id="currentQuestTitle" class="text-sm font-black text-white">-</h3>
+                <p id="currentQuestDesc" class="text-xs text-gray-400 leading-relaxed">-</p>
+                <div id="questChecklist" class="mt-2 space-y-1 text-[10px] text-gray-500">
+                    <!-- Dynamically populated checklist -->
+                </div>
+            </div>
+
+            <!-- Vibe Score Board -->
+            <div class="bg-gray-900/40 border border-gray-900 p-3 rounded-xl">
+                <div class="flex items-center justify-between mb-1.5">
+                    <span class="text-[10px] text-gray-400 font-bold uppercase">바이브 동기화율</span>
+                    <span id="vibeScoreIndicator" class="text-xs font-black text-emerald-400">100%</span>
+                </div>
+                <div class="w-full h-1.5 bg-gray-950 rounded-full overflow-hidden">
+                    <div id="vibeScoreBar" class="h-full bg-emerald-500 transition-all duration-300" style="width: 100%"></div>
+                </div>
+                <p class="text-[9px] text-gray-500 mt-1.5 leading-relaxed">
+                    * 프롬프트의 구체성이 높고 미션 조건을 완벽히 충족할수록 무기 성능(데미지 및 공격속도)이 최대 25% 가속됩니다.
+                </p>
+            </div>
+
+            <!-- Vibe Coding Tips (Carousel/Accordion Style) -->
+            <div class="flex-1 flex flex-col gap-2 overflow-y-auto pr-1">
+                <span class="text-[9px] text-gray-500 font-bold uppercase tracking-wider">💡 에이전트 바이브 코딩 팁</span>
+                
+                <div class="bg-slate-900/30 border border-gray-900 rounded-lg p-3 text-[11px] leading-relaxed">
+                    <h4 class="font-bold text-gray-300 flex items-center gap-1 mb-1">
+                        <i class="fa-solid fa-lightbulb text-amber-400"></i> 1. 명확한 수치 명시
+                    </h4>
+                    <p class="text-gray-400 text-[10px]">
+                        "매우 빠르게" 보다는 "300ms 쿨다운으로", "강하게" 보다는 "공격력 120으로"처럼 구체적인 아라비아 숫자 단위를 포함하세요. AI는 수치적 제약을 훨씬 정밀하게 해석합니다.
+                    </p>
+                </div>
+
+                <div class="bg-slate-900/30 border border-gray-900 rounded-lg p-3 text-[11px] leading-relaxed">
+                    <h4 class="font-bold text-gray-300 flex items-center gap-1 mb-1">
+                        <i class="fa-solid fa-ban text-rose-400"></i> 2. 부정적 제약 조건(Negative)
+                    </h4>
+                    <p class="text-gray-400 text-[10px]">
+                        특정 단어를 사용하지 말아야 할 때는 우회 표현을 사용하세요. 예를 들어 '불'이라는 단어 대신 '열기, 마그마, 태양의 온도, 붉은 에너지' 등으로 프레이밍해 보세요.
+                    </p>
+                </div>
+
+                <div class="bg-slate-900/30 border border-gray-900 rounded-lg p-3 text-[11px] leading-relaxed">
+                    <h4 class="font-bold text-gray-300 flex items-center gap-1 mb-1">
+                        <i class="fa-solid fa-code text-indigo-400"></i> 3. 구조적 묘사
+                    </h4>
+                    <p class="text-gray-400 text-[10px]">
+                        무기의 '외형', '마법 속성', '공격 메커니즘'을 순차적으로 명확히 설명하세요. 묘사가 풍부할수록 바이브 동기화 보너스가 향상됩니다.
+                    </p>
+                </div>
+            </div>
+        </aside>
+    </main>
+
+    <!-- Bottom Alert Toast -->
+    <div id="toast" class="fixed bottom-6 right-6 z-50 bg-gray-900 border border-indigo-500/50 text-indigo-200 px-4 py-3 rounded-xl shadow-2xl transition-all duration-300 translate-y-20 opacity-0 flex items-center gap-2 text-xs font-semibold">
+        <i class="fa-solid fa-circle-info text-indigo-400 text-sm"></i>
+        <span id="toastMessage"></span>
+    </div>
+
+    <script>
+        // Game and System Configurations
+        const config = {
+            gameActive: false,
+            elapsedTime: 0, // In seconds
+            timerInterval: null,
+            kills: 0,
+            level: 1,
+            xp: 0,
+            xpNeeded: 50, // XP multiplier curve (100 -> 50)
+            maxWeapons: 5,
+            bossSpawned: false,
+            worldWidth: 2000,
+            worldHeight: 2000,
+            
+            // Vibe Coding States
+            activeQuest: null,
+            vibeScore: 100,
+            questCompletedCount: 0
+        };
+
+        // Vibe Coding Quests Pool
+        const questPool = [
+            {
+                id: "quest_fire_no_fire",
+                title: "🔥 불꽃 없는 심화 화염",
+                description: "프롬프트에 '불' 또는 '화염' 또는 'fire' 단어를 일체 사용하지 않고, Fire(화염) 속성의 무기를 연성하세요.",
+                hint: "힌트: '열기', '태양', '용암', '마그마', '붉은 마나' 등의 간접적인 묘사로 화염을 은유해 보세요.",
+                validate: (prompt, weapon) => {
+                    const hasForbidden = /불|화염|fire|Fire/i.test(prompt);
+                    const isFire = weapon.element === 'Fire';
+                    if (hasForbidden) return { success: false, message: "금지어('불', '화염', 'fire')가 사용되었습니다." };
+                    if (!isFire) return { success: false, message: "무기의 속성이 'Fire'가 아닙니다. 화염 속성으로 해석되도록 뜨겁고 붉은 묘사를 강화하세요." };
+                    return { success: true, message: "바이브 동기화 성공! 금지어 없이 완벽한 화염 무기가 코딩되었습니다." };
+                }
+            },
+            {
+                id: "quest_fast_cooldown",
+                title: "⚡ 초고속 매직 서킷",
+                description: "무기의 공격 주기(cooldown)를 600ms 이하로 설계하고, 프롬프트에 정확한 숫자 단위를 명시하세요. (예: 500ms, 0.5초 등)",
+                hint: "힌트: 텍스트에 숫자(0-9)가 포함되어야 하며 쿨다운 주기가 짧게 설계되어야 합니다.",
+                validate: (prompt, weapon) => {
+                    const hasNumber = /[0-9]/.test(prompt);
+                    const isFast = weapon.cooldown <= 600;
+                    if (!hasNumber) return { success: false, message: "프롬프트 내에 구체적인 숫자 지침(예: 300ms, 0.5초 등)이 보이지 않습니다." };
+                    if (!isFast) return { success: false, message: "무기의 쿨다운 속도(" + weapon.cooldown + "ms)가 600ms 이하 조건을 충족하지 못했습니다." };
+                    return { success: true, message: "성공! 고속 연사 속도를 가진 서킷이 완성되었습니다." };
+                }
+            },
+            {
+                id: "quest_dark_orbit",
+                title: "💀 심연의 수호 그림자",
+                description: "Orbit(방어막) 타입이면서 Dark(어둠) 속성을 가지게 연성하세요. 프롬프트에 '수호', '그림자', '어둠' 단어가 포함되어야 합니다.",
+                hint: "힌트: '플레이어를 에워싸는 어둠의 수호 그림자' 와 같이 궤적 방식과 키워드를 모두 서술하세요.",
+                validate: (prompt, weapon) => {
+                    const isOrbit = weapon.weaponType === 'Orbit';
+                    const isDark = weapon.element === 'Dark';
+                    const hasKeywords = /수호/.test(prompt) && /그림자/.test(prompt) && /어둠/.test(prompt);
+                    if (!isOrbit) return { success: false, message: "무기 타입이 'Orbit'(회전 방어막)이 아닙니다. 공전하는 궤적을 묘사하세요." };
+                    if (!isDark) return { success: false, message: "속성이 'Dark'가 아닙니다. 어둠, 심연, 저주 등의 테마를 입히세요." };
+                    if (!hasKeywords) return { success: false, message: "필수 키워드('수호', '그림자', '어둠')가 프롬프트에 누락되었습니다." };
+                    return { success: true, message: "성공! 플레이어의 궤도를 회전하는 완벽한 심연의 수호 장벽입니다." };
+                }
+            },
+            {
+                id: "quest_light_laser",
+                title: "✨ 뇌신룡의 관통 레이저",
+                description: "Laser 타입이면서 Lightning(번개) 또는 Light(빛) 속성이어야 하며, 타격 공격력(ATK)이 90 이상인 광선을 연성하세요.",
+                hint: "힌트: '가장 가까운 대상을 즉시 지져버리는 90 대미지의 벼락 레이저' 등으로 강력한 파괴 광선을 유도해 보세요.",
+                validate: (prompt, weapon) => {
+                    const isLaser = weapon.weaponType === 'Laser';
+                    const isRightElement = weapon.element === 'Lightning' || weapon.element === 'Light';
+                    const isStrong = weapon.damage >= 90;
+                    if (!isLaser) return { success: false, message: "무기 타입이 'Laser'(즉시 타격 광선)가 아닙니다. 직선 관통 레이저를 명시하세요." };
+                    if (!isRightElement) return { success: false, message: "무기 속성이 'Lightning' 또는 'Light'가 아닙니다. 번개나 빛의 광학을 묘사하세요." };
+                    if (!isStrong) return { success: false, message: "무기 공격력(" + weapon.damage + ")이 미션 최저 수치(90)를 미달합니다." };
+                    return { success: true, message: "성공! 적을 일직선상으로 꿰뚫어 증발시키는 궁극의 레이저 포입니다." };
+                }
+            },
+            {
+                id: "quest_detail_slash",
+                title: "🗡️ 정교한 전술적 폭풍검",
+                description: "Slash(근거리 베기) 타입의 무기를 설계하되, 프롬프트의 총 길이가 45자 이상인 구체적이고 화려한 문장이어야 합니다.",
+                hint: "힌트: 무기의 외형 질감, 마력의 궤적, 격발 이펙트 등을 꼼꼼하게 풀어서 작성해 보세요.",
+                validate: (prompt, weapon) => {
+                    const isSlash = weapon.weaponType === 'Slash';
+                    const isDetailed = prompt.length >= 45;
+                    if (!isSlash) return { success: false, message: "무기 타입이 'Slash'(베기)가 아닙니다. 호를 그리며 회전 베는 궤적을 묘사하세요." };
+                    if (!isDetailed) return { success: false, message: "프롬프트 묘사가 너무 단출합니다 (" + prompt.length + "/45자). 더 풍부한 수식어로 코딩하세요." };
+                    return { success: true, message: "성공! 에이전트가 이해하기 좋은 최고 등급의 고품질 설명문입니다." };
+                }
+            }
+        ];
+
+        // Screen/Canvas variables
+        let canvas, ctx;
+        let animationFrameId;
+
+        // Sound generator wrapper (Tone.js simulation via Web Audio API)
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playSynthesizedSound(type) {
+            try {
+                if (audioCtx.state === 'suspended') {
+                    audioCtx.resume();
+                }
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+
+                if (type === 'hit') {
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(200, audioCtx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(40, audioCtx.currentTime + 0.1);
+                    gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                    gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.12);
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + 0.12);
+                } else if (type === 'levelUp') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+                    osc.frequency.setValueAtTime(600, audioCtx.currentTime + 0.1);
+                    osc.frequency.exponentialRampToValueAtTime(1200, audioCtx.currentTime + 0.3);
+                    gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+                    gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.35);
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + 0.35);
+                } else if (type === 'laser') {
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.25);
+                    gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+                    gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.25);
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + 0.25);
+                } else if (type === 'slash') {
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(300, audioCtx.currentTime + 0.15);
+                    gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                    gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + 0.15);
+                }
+            } catch(e) {
+                // Fallback silently if audio context block occurs
+            }
+        }
+
+        // Joystick states for mobile touch screen control
+        const joystick = {
+            active: false,
+            startX: 0,
+            startY: 0,
+            curX: 0,
+            curY: 0,
+            dirX: 0, // normalized vector
+            dirY: 0,
+            maxDist: 50
+        };
+
+        // Entities state databases
+        let player = {
+            x: 1000,
+            y: 1000,
+            radius: 18,
+            speed: 4.0, // 3.5 -> 4.0 (초반 기동력 상향)
+            hp: 250, // 200 -> 250 (기본 생존력 보장)
+            maxHp: 250,
+            color: '#6366f1',
+            shaking: 0,
+            weapons: [] // Equipped weapon data array
+        };
+
+        let monsters = [];
+        let projectiles = [];
+        let xpGems = [];
+        let particles = [];
+        let floatingTexts = [];
+
+        // Key Press state tracking
+        const keys = {
+            w: false,
+            a: false,
+            s: false,
+            d: false,
+            ArrowUp: false,
+            ArrowDown: false,
+            ArrowLeft: false,
+            ArrowRight: false
+        };
+
+        // Core Initialization on Windows Load
+        window.onload = function() {
+            canvas = document.getElementById('gameCanvas');
+            ctx = canvas.getContext('2d');
+            
+            // Adjust canvas sizing to window parent bounds
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+
+            // Bind Touch/Mouse Joystick Events for fluid adaptive device handling
+            setupInputListeners();
+        };
+
+        function resizeCanvas() {
+            const container = document.getElementById('canvasContainer');
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+        }
+
+        // Setup touch & Keyboard input actions
+        function setupInputListeners() {
+            // Keyboard Controls
+            window.addEventListener('keydown', (e) => {
+                if (e.key in keys) {
+                    keys[e.key] = true;
+                }
+            });
+
+            window.addEventListener('keyup', (e) => {
+                if (e.key in keys) {
+                    keys[e.key] = false;
+                }
+            });
+
+            // Touch Interface Joystick triggers
+            const container = document.getElementById('canvasContainer');
+            const stickEl = document.getElementById('touchJoystick');
+            const knobEl = document.getElementById('joystickKnob');
+
+            container.addEventListener('touchstart', (e) => {
+                const touch = e.touches[0];
+                joystick.active = true;
+                joystick.startX = touch.clientX;
+                joystick.startY = touch.clientY;
+                joystick.curX = touch.clientX;
+                joystick.curY = touch.clientY;
+
+                // Position the joystick element
+                stickEl.style.left = `${touch.clientX - 56}px`;
+                stickEl.style.top = `${touch.clientY - 56}px`;
+                stickEl.classList.remove('hidden');
+                stickEl.classList.add('flex');
+            });
+
+            container.addEventListener('touchmove', (e) => {
+                if (!joystick.active) return;
+                const touch = e.touches[0];
+                joystick.curX = touch.clientX;
+                joystick.curY = touch.clientY;
+
+                let dx = joystick.curX - joystick.startX;
+                let dy = joystick.curY - joystick.startY;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+
+                if (dist > joystick.maxDist) {
+                    dx = (dx / dist) * joystick.maxDist;
+                    dy = (dy / dist) * joystick.maxDist;
+                }
+
+                // Update stick visual node
+                knobEl.style.transform = `translate(${dx}px, ${dy}px)`;
+
+                // Normalize direction vectors
+                joystick.dirX = dx / joystick.maxDist;
+                joystick.dirY = dy / joystick.maxDist;
+            });
+
+            container.addEventListener('touchend', () => {
+                joystick.active = false;
+                joystick.dirX = 0;
+                joystick.dirY = 0;
+                stickEl.classList.add('hidden');
+                stickEl.classList.remove('flex');
+                knobEl.style.transform = `translate(0px, 0px)`;
+            });
+        }
+
+        // ----------------------------------------------------
+        // Vibe Coding Core Engine
+        // ----------------------------------------------------
+        
+        // Select a new random quest
+        function selectNewQuest() {
+            const availableQuests = questPool.filter(q => q.id !== (config.activeQuest ? config.activeQuest.id : ""));
+            config.activeQuest = availableQuests[Math.floor(Math.random() * availableQuests.length)];
+            updateQuestUI();
+        }
+
+        // Update Quest Panel details
+        function updateQuestUI() {
+            if (!config.activeQuest) return;
+            
+            document.getElementById('currentQuestTitle').innerText = config.activeQuest.title;
+            document.getElementById('currentQuestDesc').innerText = config.activeQuest.description;
+            
+            const forgeQuestTitle = document.getElementById('forgeQuestTitle');
+            const forgeQuestDesc = document.getElementById('forgeQuestDesc');
+            if (forgeQuestTitle) forgeQuestTitle.innerText = config.activeQuest.title;
+            if (forgeQuestDesc) forgeQuestDesc.innerText = config.activeQuest.description + "\n\n💡 " + config.activeQuest.hint;
+            
+            // Build dynamic validation check preview
+            const checklistContainer = document.getElementById('questChecklist');
+            if (checklistContainer) {
+                checklistContainer.innerHTML = `
+                    <div class="flex items-center gap-1.5 text-gray-400">
+                        <i class="fa-solid fa-circle-info text-[9px]"></i>
+                        <span>${config.activeQuest.hint}</span>
+                    </div>
+                `;
+            }
+        }
+
+        // Rule-based Local Prompt Analyzer
+        function parsePromptLocally(prompt) {
+            const lowerPrompt = prompt.toLowerCase();
+            
+            // 1. Analyze Weapon Type
+            let weaponType = "Projectile"; // Default
+            if (/laser|레이저|광선|빔|beam/i.test(lowerPrompt)) {
+                weaponType = "Laser";
+            } else if (/orbit|보호막|실드|shield|위성|공전|회전구|회전하며|수호|주변을/i.test(lowerPrompt)) {
+                weaponType = "Orbit";
+            } else if (/slash|검|칼|도끼|베기|낫|scythe|sword|blade|cutter|검날|참격/i.test(lowerPrompt)) {
+                weaponType = "Slash";
+            }
+
+            // 2. Analyze Element and matching Hex Color
+            let element = "None";
+            let color = "#818cf8"; // Default lavender
+            
+            if (/fire|화염|불|지옥|heat|burning|태양|용암|마그마/i.test(lowerPrompt)) {
+                element = "Fire";
+                color = "#ef4444"; // Red
+            } else if (/water|물|아이스|ice|빙결|얼음|frost|해류/i.test(lowerPrompt)) {
+                element = "Water";
+                color = "#3b82f6"; // Blue
+            } else if (/wind|바람|폭풍|storm|tornado|회오리|기류/i.test(lowerPrompt)) {
+                element = "Wind";
+                color = "#10b981"; // Emerald
+            } else if (/earth|대지|돌|바위|stone|clay|지진/i.test(lowerPrompt)) {
+                element = "Earth";
+                color = "#a855f7"; // Purple
+            } else if (/light|빛|신성|holy|sun/i.test(lowerPrompt)) {
+                element = "Light";
+                color = "#f59e0b"; // Amber
+            } else if (/dark|어둠|암흑|그림자|shadow|soul|영혼|저주|심연/i.test(lowerPrompt)) {
+                element = "Dark";
+                color = "#ec4899"; // Pink
+            } else if (/lightning|번개|뇌신|전격|electric|thunder|전기|벼락/i.test(lowerPrompt)) {
+                element = "Lightning";
+                color = "#eab308"; // Yellow
+            }
+
+            // 3. Stat Extraction from numbers or descriptors
+            let damage = 35; // Default ATK base
+            let cooldown = 1000; // Default cooldown base (ms)
+            let range = weaponType === "Projectile" || weaponType === "Laser" ? 220 : 120;
+            
+            // Check for explicit numbers (e.g. '80 ATK', '공격력 120', '300ms', '0.5초')
+            const numMatches = prompt.match(/\d+(\.\d+)?/g);
+            if (numMatches) {
+                numMatches.forEach(numStr => {
+                    const num = parseFloat(numStr);
+                    // If the number looks like a cooldown in ms (e.g. 100 to 2500)
+                    if (num >= 100 && num <= 2500 && /ms|밀리초|주기/i.test(lowerPrompt)) {
+                        cooldown = Math.round(num);
+                    }
+                    // If the number looks like seconds (e.g. 0.1 to 2.5)
+                    else if (num > 0 && num <= 3 && /초|sec|s/i.test(lowerPrompt)) {
+                        cooldown = Math.round(num * 1000);
+                    }
+                    // If it looks like damage/ATK (e.g. 10 to 150)
+                    else if (num >= 10 && num <= 200) {
+                        damage = Math.round(num);
+                    }
+                });
+            } else {
+                // Adjust based on adjectives if no numbers present
+                if (/빠른|fast|rapid|speed|초고속/i.test(lowerPrompt)) {
+                    cooldown = 450;
+                }
+                if (/강력한|heavy|powerful|초토화|거대/i.test(lowerPrompt)) {
+                    damage = 75;
+                    cooldown = Math.max(cooldown, 1400); // Heavy attacks are slower
+                }
+                if (/광범위|넓은|wide|range/i.test(lowerPrompt)) {
+                    range = Math.round(range * 1.4);
+                }
+            }
+
+            // Constrain stats to reasonable game bounds
+            damage = Math.max(15, Math.min(180, damage));
+            cooldown = Math.max(200, Math.min(2500, cooldown));
+            range = Math.max(70, Math.min(360, range));
+
+            // Generate name matching the theme
+            let weaponName = "";
+            const isKorean = /[ㄱ-ㅎ|ㅏ-ㅣ|가-힣]/.test(prompt);
+            
+            if (isKorean) {
+                const prefix = element !== "None" ? `${element} 속성의 ` : "커스텀 ";
+                const typeSuffix = weaponType === "Slash" ? "참격도" : 
+                                   weaponType === "Orbit" ? "수호성" : 
+                                   weaponType === "Laser" ? "광선포" : "투사체";
+                weaponName = prompt.slice(0, 10).trim() + " " + typeSuffix;
+            } else {
+                const prefix = element !== "None" ? `${element} ` : "Custom ";
+                const typeSuffix = weaponType === "Slash" ? "Slasher" : 
+                                   weaponType === "Orbit" ? "Orbiter" : 
+                                   weaponType === "Laser" ? "Ray" : "Bolt";
+                weaponName = prompt.slice(0, 12).trim() + " " + typeSuffix;
+            }
+
+            return {
+                weaponName: weaponName,
+                weaponType: weaponType,
+                damage: damage,
+                cooldown: cooldown,
+                range: range,
+                element: element,
+                projectileColor: color,
+                specialTrait: `로컬 컴파일러: ${element} 기원의 ${weaponType} 격발 루프 가동.`,
+                description: `프롬프트 파싱 분석 기반 연성 무기 (Vibe Score 가속 적용 가능).`
+            };
+        }
+
+        // Evaluate Prompt Quality & Quest Compliance
+        function evaluatePrompt(prompt, weapon) {
+            // 1. Constraints Check (Active Quest Validation)
+            let constraintsScore = 0;
+            let constraintMessage = "액티브 퀘스트가 없습니다.";
+            if (config.activeQuest) {
+                const res = config.activeQuest.validate(prompt, weapon);
+                constraintsScore = res.success ? 100 : 0;
+                constraintMessage = res.message;
+            } else {
+                constraintsScore = 100;
+            }
+
+            // 2. Clarity Check (Explicit numbers / parameters)
+            const hasNumbers = /[0-9]/.test(prompt);
+            const hasExplicitUnits = /ms|초|px|atk|dmg|데미지|공격력|쿨|속도|범위/i.test(prompt);
+            const clarityScore = (hasNumbers ? 50 : 20) + (hasExplicitUnits ? 50 : 10);
+
+            // 3. Richness Check (Description word count & detail level)
+            const charLength = prompt.trim().length;
+            let richnessScore = 20;
+            if (charLength >= 45) richnessScore = 100;
+            else if (charLength >= 25) richnessScore = 75;
+            else if (charLength >= 10) richnessScore = 50;
+
+            // Combine Score
+            const vibeScore = Math.round((constraintsScore + clarityScore + richnessScore) / 3);
+            
+            return {
+                score: vibeScore,
+                constraintsPassed: constraintsScore === 100,
+                constraintMessage: constraintMessage,
+                clarityScore: clarityScore,
+                richnessScore: richnessScore
+            };
+        }
+
+        // Simple customized toast handler
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            const label = document.getElementById('toastMessage');
+            label.innerText = msg;
+            toast.className = toast.className.replace("translate-y-20 opacity-0", "translate-y-0 opacity-100");
+            setTimeout(() => {
+                toast.className = toast.className.replace("translate-y-0 opacity-100", "translate-y-20 opacity-0");
+            }, 3000);
+        }
+
+        function updatePlayerMovement() {
+            let dx = 0;
+            let dy = 0;
+
+            if (keys.w || keys.ArrowUp) dy -= 1;
+            if (keys.s || keys.ArrowDown) dy += 1;
+            if (keys.a || keys.ArrowLeft) dx -= 1;
+            if (keys.d || keys.ArrowRight) dx += 1;
+
+            // Apply touch joystick direction if keyboard is idle
+            if (dx === 0 && dy === 0 && joystick.active) {
+                dx = joystick.dirX;
+                dy = joystick.dirY;
+            }
+
+            // Normalize vector velocity
+            const length = Math.sqrt(dx*dx + dy*dy);
+            if (length > 0) {
+                player.x += (dx / length) * player.speed;
+                player.y += (dy / length) * player.speed;
+
+                // Restrict within world boundaries
+                player.x = Math.max(player.radius, Math.min(config.worldWidth - player.radius, player.x));
+                player.y = Math.max(player.radius, Math.min(config.worldHeight - player.radius, player.y));
+            }
+        }
+
+        // Initial default weapon selection
+        let chosenInitialWeapon = 'sword';
+        function selectInitialWeapon(type) {
+            chosenInitialWeapon = type;
+            const buttons = document.querySelectorAll('#startScreen button');
+            buttons.forEach(btn => btn.classList.remove('border-indigo-400', 'bg-indigo-900/60'));
+            // Highlight selected
+            event.currentTarget.classList.add('border-indigo-400', 'bg-indigo-900/60');
+        }
+
+        // Start Core Survivors Game
+        function startGame() {
+            document.getElementById('startScreen').classList.add('hidden');
+            
+            // Clean game boards
+            config.elapsedTime = 0;
+            config.kills = 0;
+            config.level = 1;
+            config.xp = 0;
+            config.xpNeeded = 50; // 100 -> 50 (첫 퀘스트 유도 가속)
+            config.bossSpawned = false;
+            config.questCompletedCount = 0;
+            config.vibeScore = 100;
+            monsters = [];
+            projectiles = [];
+            xpGems = [];
+            particles = [];
+            floatingTexts = [];
+            player.hp = player.maxHp;
+            player.x = 1000;
+            player.y = 1000;
+            player.weapons = [];
+
+            // Add selected basic weapon to initial inventory
+            addStartingWeapon(chosenInitialWeapon);
+
+            // Initialize first Vibe Coding Quest
+            selectNewQuest();
+
+            // Set HUD and launch loops
+            updateHUD();
+            config.gameActive = true;
+            
+            // Timer interval
+            if (config.timerInterval) clearInterval(config.timerInterval);
+            config.timerInterval = setInterval(() => {
+                if (config.gameActive) {
+                    config.elapsedTime++;
+                    updateTimerUI();
+
+                    // Boss spawns after 90 seconds, or let's spawn at 60 seconds for faster exciting gameplay!
+                    if (config.elapsedTime === 60 && !config.bossSpawned) {
+                        spawnBossMonster();
+                    }
+                }
+            }, 1000);
+
+            // Run Canvas loop
+            cancelAnimationFrame(animationFrameId);
+            gameLoop();
+            showToast("🎯 아레나 전투 개시! 적들을 처치하고 경험치 보석을 모으세요!");
+        }
+
+        function restartGame() {
+            document.getElementById('gameResultOverlay').classList.add('hidden');
+            document.getElementById('startScreen').classList.remove('hidden');
+        }
+
+        function updateTimerUI() {
+            const min = Math.floor(config.elapsedTime / 60).toString().padStart(2, '0');
+            const sec = (config.elapsedTime % 60).toString().padStart(2, '0');
+            document.getElementById('gameTimer').innerText = `${min}:${sec}`;
+        }
+
+        function updateHUD() {
+            document.getElementById('killCounter').innerText = config.kills;
+            document.getElementById('playerLevel').innerText = config.level;
+            
+            // Progress calculations
+            const xpPct = Math.min(100, (config.xp / config.xpNeeded) * 100);
+            document.getElementById('xpBarFill').style.width = `${xpPct}%`;
+        }
+
+        // Starting weapons setup (Local default templates)
+        function addStartingWeapon(type) {
+            let baseWeapon = {};
+            if (type === 'sword') {
+                baseWeapon = {
+                    weaponName: "강철 훈련용 목검",
+                    weaponType: "Slash",
+                    damage: 25,
+                    cooldown: 1200, // miliseconds
+                    lastFired: 0,
+                    range: 120,
+                    element: "None",
+                    projectileColor: "#818cf8",
+                    specialTrait: "주변 근거리 회전 베기로 적들을 도려냅니다.",
+                    description: "초보 용사들에게 지급되는 기본 수련 검입니다."
+                };
+            } else {
+                baseWeapon = {
+                    weaponName: "마법 견습생 지팡이",
+                    weaponType: "Projectile",
+                    damage: 15,
+                    cooldown: 800,
+                    lastFired: 0,
+                    range: 220,
+                    element: "Light",
+                    projectileColor: "#38bdf8",
+                    specialTrait: "가장 가까운 적들에게 유도 마법 화살을 발사합니다.",
+                    description: "단단한 서리 수정 가공 마법 지팡이입니다."
+                };
+            }
+            player.weapons.push(baseWeapon);
+            renderWeaponsDeckUI();
+        }
+
+        function getAPIKey() {
+            const val = document.getElementById('apiKeyInput').value;
+            return val ? val.trim() : "";
+        }
+
+        function fillPresetPrompt(preset) {
+            const mappings = {
+                'fire_orbit': "내 주변을 거대하게 공전하며 접근하는 모든 적을 불태워 녹여버리는 강력한 'Fire 지옥화염 수호 실드'",
+                'lightning_chain': "가까운 무작위 대상을 향해 사정거리 끝까지 뻗어 나가 강력한 전격을 감전시키는 유도형 'Lightning 뇌신룡 전선검'",
+                'dark_scythe': "주변 사방으로 무섭게 퍼지며 다수의 적을 동시에 관통해 벨 수 있는 'Dark 사신 암흑 소울 사운드 낫'"
+            };
+            document.getElementById('weaponPromptInput').value = mappings[preset];
+        }
+
+        // Real-time AI compiling with Terminal Log visualization
+        async function forgeWeaponFromPrompt() {
+            const userPrompt = document.getElementById('weaponPromptInput').value.trim();
+            if (!userPrompt) {
+                showToast("⚠️ 무기를 기획할 수 있도록 프롬프트를 작성해 주세요!");
+                return;
+            }
+
+            // UI Control
+            document.getElementById('forgeConfirmBtn').classList.add('hidden');
+            const term = document.getElementById('compilerTerminal');
+            term.classList.remove('hidden');
+            term.innerHTML = '';
+
+            const printLog = (msg, type = 'info') => {
+                const colors = {
+                    info: 'text-gray-400',
+                    parse: 'text-cyan-400',
+                    success: 'text-emerald-400',
+                    error: 'text-rose-400',
+                    warning: 'text-amber-400'
+                };
+                const line = document.createElement('div');
+                line.className = colors[type] || 'text-white';
+                line.innerText = msg;
+                term.appendChild(line);
+                term.scrollTop = term.scrollHeight;
+            };
+
+            const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+            printLog("🚀 [1/4] Vibe Compiler v2.1-stable 활성화 중...", "info");
+            await sleep(500);
+            printLog("🔍 [2/4] 프롬프트 렉시컬 분석 및 바이브 패턴 파싱...", "parse");
+            await sleep(600);
+            printLog(`   > 입력 길이: ${userPrompt.length}자`, "info");
+            
+            let finalWeapon = null;
+            let isApiMode = false;
+            const apiKey = getAPIKey();
+
+            if (apiKey) {
+                printLog("🌐 Gemini AI 원격 컴파일 모드 가동...", "info");
+                try {
+                    const systemPrompt = `당신은 뱀서라이크 게임('Vampire Survivors' / '서바이버즈' 류)의 전설적인 아이템 대장장이입니다.
+                    유저가 기획해 작성한 무기 묘사(한국어 혹은 영어)를 분석하여, 게임 속성에 완벽하게 들어맞고 밸런싱이 최적화된 새로운 자동 타격 전용 무기 데이터를 설계하고 JSON 형태로 반환해 주세요.
+                    규칙:
+                    1. weaponType은 무조건 다음 4개 중 딱 1개로 분류되어야 함:
+                       - "Slash": 플레이어 주변 원형 부채꼴 영역을 주기적으로 크게 베는 칼/낫/도끼형 범위 무기
+                       - "Projectile": 가장 가까운 적을 조준해 일정 속도의 총알/화살 투사체를 날리는 발사형 무기
+                       - "Orbit": 플레이어 주위를 원형 궤도로 영구적으로 돌아 보호하는 방어막/수호 구체형 무기
+                       - "Laser": 가장 가까운 대상에게 즉시 관통형 빔을 발사해 직선 상의 모든 대상을 지지는 관통 레이저 무기
+                    2. damage: 20 ~ 150 범위 내 정수
+                    3. cooldown: 공격 간격 주기 (밀리초 단위, 300 ~ 2500 범위 내 정수. 강하거나 범위가 넓을 수록 대기 쿨다운이 깁니다.)
+                    4. range: 타격 인식 범위 (80 ~ 350 범위 내 정수)
+                    5. element: "Fire", "Water", "Earth", "Wind", "Light", "Dark", "Lightning", "None" 중 하나
+                    6. projectileColor: 해당 속성 테마에 어울리는 Hex 컬러 문자열 (예: #ef4444, #3b82f6 등)
+                    7. specialTrait: 발동되는 고유 메커니즘을 1개 문장으로 요약
+                    8. description: 아이템의 배경 설정 텍스트 1문장.`;
+
+                    const userQuery = `유저 무기 프롬프트: "${userPrompt}"`;
+                    const payload = {
+                        contents: [{ parts: [{ text: userQuery }] }],
+                        systemInstruction: { parts: [{ text: systemPrompt }] },
+                        generationConfig: {
+                            responseMimeType: "application/json",
+                            responseSchema: {
+                                type: "OBJECT",
+                                properties: {
+                                    "weaponName": { "type": "STRING" },
+                                    "weaponType": { "type": "STRING" },
+                                    "damage": { "type": "INTEGER" },
+                                    "cooldown": { "type": "INTEGER" },
+                                    "range": { "type": "INTEGER" },
+                                    "element": { "type": "STRING" },
+                                    "projectileColor": { "type": "STRING" },
+                                    "specialTrait": { "type": "STRING" },
+                                    "description": { "type": "STRING" }
+                                },
+                                "required": ["weaponName", "weaponType", "damage", "cooldown", "range", "element", "projectileColor", "specialTrait", "description"]
+                            }
+                        }
+                    };
+
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) throw new Error();
+                    const result = await response.json();
+                    const jsonText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (!jsonText) throw new Error();
+
+                    finalWeapon = JSON.parse(jsonText);
+                    isApiMode = true;
+                    printLog("✅ Gemini AI 컴파일 데이터 수신 성공.", "success");
+                } catch (e) {
+                    printLog("⚠️ API 연결 실패 또는 JSON 응답 오류. 로컬 컴파일러 우회 모드로 전환합니다.", "warning");
+                }
+            } else {
+                printLog("🔌 로컬 내장형 프롬프트 파서 동작...", "info");
+            }
+
+            if (!finalWeapon) {
+                await sleep(400);
+                finalWeapon = parsePromptLocally(userPrompt);
+                printLog(`✅ 로컬 기계 학습 엔진을 통한 무기 분석 완료.`, "success");
+            }
+
+            printLog("📊 [3/4] 바이브 품질 평가 및 제약조건(Quest) 정밀 검사...", "parse");
+            await sleep(600);
+
+            // Evaluation
+            const evaluation = evaluatePrompt(userPrompt, finalWeapon);
+            config.vibeScore = evaluation.score;
+
+            // Render Vibe Score indicator
+            document.getElementById('vibeScoreIndicator').innerText = `${evaluation.score}%`;
+            document.getElementById('vibeScoreBar').style.width = `${evaluation.score}%`;
+            
+            // Dynamic class adjustment based on score
+            const vibeBar = document.getElementById('vibeScoreBar');
+            vibeBar.className = "h-full transition-all duration-300 " + 
+                               (evaluation.score >= 80 ? "bg-emerald-500" : evaluation.score >= 50 ? "bg-indigo-500" : "bg-rose-500");
+
+            printLog(`   > 명확성(Clarity) 지수: ${evaluation.clarityScore}/100`, "info");
+            printLog(`   > 표현력(Richness) 지수: ${evaluation.richnessScore}/100`, "info");
+            
+            if (evaluation.constraintsPassed) {
+                printLog(`✅ [SUCCESS] 퀘스트 검증 통과: ${evaluation.score}% 바이브 일치!`, "success");
+                // Apply high vibe bonus: ATK +20%, Cooldown -15%
+                if (evaluation.score >= 80) {
+                    finalWeapon.damage = Math.round(finalWeapon.damage * 1.25);
+                    finalWeapon.cooldown = Math.round(finalWeapon.cooldown * 0.85);
+                    finalWeapon.specialTrait = "✨[싱크 80%+] " + finalWeapon.specialTrait;
+                    printLog("💎 특전 버프 적용: 데미지 25% 상승, 공격속도 15% 가속!", "success");
+                } else {
+                    printLog("👍 기본 성능 버프 적용 완료.", "success");
+                }
+            } else {
+                printLog(`❌ [ERROR] 퀘스트 제약조건 불충족: ${evaluation.constraintMessage}`, "error");
+                printLog(`⚠️ 경고: 바이브 싱크율이 낮아 무기 스펙에 디버프 페널티(ATK -20%)가 부가됩니다.`, "warning");
+                finalWeapon.damage = Math.round(finalWeapon.damage * 0.8);
+                finalWeapon.specialTrait = "⚠️[비동기화 페널티] " + finalWeapon.specialTrait;
+            }
+
+            await sleep(800);
+            printLog("🔨 [4/4] 프레임 코어 마나 융합 및 무기 실체화...", "parse");
+            await sleep(500);
+            
+            finalWeapon.lastFired = 0;
+
+            // Equip weapon
+            if (player.weapons.length >= config.maxWeapons) {
+                player.weapons.shift();
+            }
+            player.weapons.push(finalWeapon);
+            renderWeaponsDeckUI();
+
+            printLog(`🚀 컴파일 완료: [${finalWeapon.weaponName}]이 무기고에 장착되었습니다!`, "success");
+            playSynthesizedSound('levelUp');
+            
+            await sleep(1500);
+            closeForgePortal();
+        }
+
+        // Update Sidebar Weapon lists
+        function renderWeaponsDeckUI() {
+            const container = document.getElementById('weaponsDeck');
+            const emptyState = document.getElementById('deckEmptyState');
+            
+            // Empty checks
+            if (player.weapons.length > 0) {
+                emptyState.classList.add('hidden');
+            } else {
+                emptyState.classList.remove('hidden');
+            }
+
+            // Remove existing visual cards
+            const existingCards = container.querySelectorAll('.weapon-item-card');
+            existingCards.forEach(c => c.remove());
+
+            // Build fresh cards
+            player.weapons.forEach((wp, index) => {
+                const card = document.createElement('div');
+                card.className = "weapon-item-card bg-gray-900 border border-gray-800 rounded-xl p-3.5 flex flex-col gap-2 relative overflow-hidden transition-all hover:border-indigo-500/50";
+                
+                // Color stripes based on element
+                let elementBorder = "bg-gray-600";
+                if (wp.element === 'Fire') elementBorder = "bg-red-500";
+                else if (wp.element === 'Water') elementBorder = "bg-blue-500";
+                else if (wp.element === 'Wind') elementBorder = "bg-emerald-500";
+                else if (wp.element === 'Earth') elementBorder = "bg-purple-500";
+                else if (wp.element === 'Light') elementBorder = "bg-amber-400";
+                else if (wp.element === 'Dark') elementBorder = "bg-pink-500";
+                else if (wp.element === 'Lightning') elementBorder = "bg-yellow-400";
+
+                card.innerHTML = `
+                    <div class="absolute top-0 left-0 w-1.5 h-full ${elementBorder}"></div>
+                    <div class="flex items-center justify-between gap-1 pl-1">
+                        <span class="text-[9px] font-black uppercase text-indigo-400 tracking-wider">${wp.weaponType}</span>
+                        <span class="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-950 text-gray-300">${wp.element}</span>
+                    </div>
+                    <div class="pl-1">
+                        <h4 class="text-xs font-black text-gray-100">${wp.weaponName}</h4>
+                        <p class="text-[10px] text-gray-400 mt-1 font-semibold">${wp.specialTrait}</p>
+                    </div>
+                    <div class="grid grid-cols-3 gap-1.5 text-center bg-slate-950/60 p-1.5 rounded-lg text-[9px] pl-1">
+                        <div>
+                            <span class="text-gray-500 block uppercase font-bold">ATK</span>
+                            <span class="font-extrabold text-rose-400">${wp.damage}</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-500 block uppercase font-bold">SPD</span>
+                            <span class="font-extrabold text-amber-400">${(1000/wp.cooldown).toFixed(1)}/s</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-500 block uppercase font-bold font-bold">RNG</span>
+                            <span class="font-extrabold text-cyan-400">${wp.range}px</span>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+
+            document.getElementById('weaponCount').innerText = `${player.weapons.length}/${config.maxWeapons}`;
+        }
+
+        // Handle open/close Portal UI states
+        function openForgePortal() {
+            config.gameActive = false; // Freeze gameplay engine
+            document.getElementById('weaponPromptInput').value = "";
+            
+            // Hide terminal and show forge button again
+            const term = document.getElementById('compilerTerminal');
+            if (term) {
+                term.classList.add('hidden');
+                term.innerHTML = '';
+            }
+            document.getElementById('forgeConfirmBtn').classList.remove('hidden');
+            
+            // Roll new quest on level up!
+            selectNewQuest();
+            
+            const modal = document.getElementById('forgePortalModal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            playSynthesizedSound('levelUp');
+        }
+
+        function closeForgePortal() {
+            const modal = document.getElementById('forgePortalModal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+            
+            // Resume gameplay safely
+            config.gameActive = true;
+            updateHUD();
+        }
+
+        function spawnNormalMonster() {
+            if (monsters.length > 50) return; // Prevent excessive lag
+
+            // Spawn just outside the current camera screen bounds
+            const angle = Math.random() * Math.PI * 2;
+            const distance = Math.max(canvas.width, canvas.height) * 0.6;
+            const spawnX = player.x + Math.cos(angle) * distance;
+            const spawnY = player.y + Math.sin(angle) * distance;
+
+            // Constrain spawn points inside world grid
+            if (spawnX < 0 || spawnX > config.worldWidth || spawnY < 0 || spawnY > config.worldHeight) return;
+
+            // Speed and HP scales progressively with timer progression (softened for first 45s)
+            const scaling = 1 + Math.max(0, config.elapsedTime - 45) * 0.005;
+            
+            // Randomly pick a monster class (softened stats)
+            const classes = [
+                { type: 'swarm', radius: 10, hp: 8 * scaling, speed: 1.4, color: '#f87171', xp: 15 },
+                { type: 'hunter', radius: 14, hp: 18 * scaling, speed: 1.7, color: '#c084fc', xp: 25 },
+                { type: 'defender', radius: 18, hp: 45 * scaling, speed: 0.9, color: '#94a3b8', xp: 50 }
+            ];
+            const chosen = classes[Math.floor(Math.random() * classes.length)];
+
+            monsters.push({
+                x: spawnX,
+                y: spawnY,
+                radius: chosen.radius,
+                hp: chosen.hp,
+                maxHp: chosen.hp,
+                speed: chosen.speed,
+                color: chosen.color,
+                xpValue: chosen.xp,
+                isBoss: false,
+                shaking: 0,
+                damageTimer: 0 // Cooldown before hitting player again
+            });
+        }
+
+        function spawnBossMonster() {
+            config.bossSpawned = true;
+            
+            // Epic spawn near player but distinct
+            const boss = {
+                x: player.x + 200,
+                y: player.y - 200,
+                radius: 40,
+                hp: 900, // 1500 -> 900 (보스전 완만화)
+                maxHp: 900,
+                speed: 1.1, // 1.5 -> 1.1 (기동 범위 완화)
+                color: '#f43f5e', // Furious glowing red
+                xpValue: 1000,
+                isBoss: true,
+                name: "기계 폭군 타이탄 (Calamity Engine)",
+                shaking: 0,
+                damageTimer: 0
+            };
+            
+            monsters.push(boss);
+            showToast("🚨 경고! 심연의 고대 병기 보스가 아레나 한가운데에 출현했습니다!");
+            playSynthesizedSound('hit');
+            floatingTexts.push(new FloatingText("BOSS SPAWNED!", player.x, player.y - 60, '#f43f5e', true));
+        }
+
+        function executeAutoWeaponsFire(now) {
+            player.weapons.forEach(wp => {
+                if (now - wp.lastFired >= wp.cooldown) {
+                    const fired = fireWeapon(wp);
+                    if (fired) {
+                        wp.lastFired = now;
+                    }
+                }
+            });
+        }
+
+        function fireWeapon(wp) {
+            // Find closest monster within range
+            let target = null;
+            let minDist = wp.range;
+
+            monsters.forEach(m => {
+                const dx = m.x - player.x;
+                const dy = m.y - player.y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+                if (dist < minDist) {
+                    minDist = dist;
+                    target = m;
+                }
+            });
+
+            // If no monster is within target, slash/orbit still trigger, bullets wait
+            if (!target && wp.weaponType === 'Projectile') return false;
+
+            if (wp.weaponType === 'Projectile' && target) {
+                // Fire bullet toward target coordinates
+                const dx = target.x - player.x;
+                const dy = target.y - player.y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+                
+                projectiles.push({
+                    x: player.x,
+                    y: player.y,
+                    vx: (dx / dist) * 7,
+                    vy: (dy / dist) * 7,
+                    radius: 5,
+                    damage: wp.damage,
+                    color: wp.projectileColor,
+                    element: wp.element,
+                    life: 150 // frames limit
+                });
+                playSynthesizedSound('laser');
+                return true;
+
+            } else if (wp.weaponType === 'Slash') {
+                // Instantly swipe slice nearby monsters
+                monsters.forEach(m => {
+                    const dx = m.x - player.x;
+                    const dy = m.y - player.y;
+                    const dist = Math.sqrt(dx*dx + dy*dy);
+                    if (dist <= wp.range) {
+                        dealDamageToMonster(m, wp.damage, wp.element);
+                    }
+                });
+
+                // Spawn visual swipe ring
+                particles.push({
+                    type: 'slash_ring',
+                    x: player.x,
+                    y: player.y,
+                    radius: wp.range,
+                    color: wp.projectileColor,
+                    life: 1.0,
+                    decay: 0.08
+                });
+                playSynthesizedSound('slash');
+                return true;
+
+            } else if (wp.weaponType === 'Orbit') {
+                // Spin protective orbs that hit targets they touch
+                // No special firing logic here, we maintain orbits in the tick update
+                return true;
+
+            } else if (wp.weaponType === 'Laser' && target) {
+                // Instantly hit all targets on a direct laser line
+                const dx = target.x - player.x;
+                const dy = target.y - player.y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+                
+                // Laser trace line segment
+                const lx = dx / dist;
+                const ly = dy / dist;
+
+                // Hit enemies colliding with the line up to range limits
+                monsters.forEach(m => {
+                    // Projection to find distance from point to line
+                    const vX = m.x - player.x;
+                    const vY = m.y - player.y;
+                    const projection = vX * lx + vY * ly;
+                    
+                    if (projection > 0 && projection < wp.range) {
+                        const closestX = player.x + lx * projection;
+                        const closestY = player.y + ly * projection;
+                        const distToLine = Math.sqrt((m.x - closestX)**2 + (m.y - closestY)**2);
+                        
+                        if (distToLine <= m.radius + 15) {
+                            dealDamageToMonster(m, wp.damage, wp.element);
+                        }
+                    }
+                });
+
+                // Visual laser beam particle
+                particles.push({
+                    type: 'laser_beam',
+                    x1: player.x,
+                    y1: player.y,
+                    x2: player.x + lx * wp.range,
+                    y2: player.y + ly * wp.range,
+                    color: wp.projectileColor,
+                    life: 1.0,
+                    decay: 0.12
+                });
+                playSynthesizedSound('laser');
+                return true;
+            }
+
+            return false;
+        }
+
+        // Deal damage calculations incorporating elements
+        function dealDamageToMonster(m, dmg, element) {
+            let mult = 1.0;
+            // Flow dynamics: Fire -> Wind -> Earth -> Water -> Fire
+            if (element === 'Fire' && m.color === '#94a3b8') mult = 1.5; // Fire melts stone/defender
+            if (element === 'Lightning' && m.color === '#c084fc') mult = 1.5; // Shock hunter
+            
+            const finalDmg = Math.floor(dmg * mult);
+            m.hp = Math.max(0, m.hp - finalDmg);
+            m.shaking = 8;
+
+            // Damage floating text
+            floatingTexts.push(new FloatingText(finalDmg.toString(), m.x, m.y, mult > 1.0 ? '#fbbf24' : '#ef4444'));
+
+            // Emit blood splats
+            emitParticles(m.x, m.y, m.color, 8);
+
+            // Handle death drop
+            if (m.hp <= 0) {
+                const idx = monsters.indexOf(m);
+                if (idx > -1) {
+                    monsters.splice(idx, 1);
+                    config.kills++;
+                    
+                    // Drop experience gems
+                    xpGems.push({
+                        x: m.x,
+                        y: m.y,
+                        value: m.xpValue,
+                        radius: m.isBoss ? 12 : 5,
+                        color: m.isBoss ? '#f43f5e' : '#34d399'
+                    });
+
+                    // Trigger ultimate stage clear if Boss defeated
+                    if (m.isBoss) {
+                        handleStageVictory();
+                    }
+                }
+            }
+        }
+
+        // Particle generator
+        function emitParticles(x, y, color, count=6) {
+            for(let i=0; i<count; i++) {
+                particles.push({
+                    type: 'spark',
+                    x: x,
+                    y: y,
+                    vx: (Math.random() - 0.5) * 6,
+                    vy: (Math.random() - 0.5) * 6,
+                    radius: Math.random() * 3 + 1.5,
+                    color: color,
+                    life: 1.0,
+                    decay: Math.random() * 0.05 + 0.02
+                });
+            }
+        }
+
+        // Damage display popup text structure
+        class FloatingText {
+            constructor(text, x, y, color, isBold=false) {
+                this.text = text;
+                this.x = x + (Math.random() - 0.5) * 20;
+                this.y = y - 10;
+                this.color = color;
+                this.alpha = 1.0;
+                this.vy = -1.2;
+                this.isBold = isBold;
+            }
+            update() {
+                this.y += this.vy;
+                this.alpha -= 0.025;
+            }
+            draw(ctx, camX, camY) {
+                ctx.save();
+                ctx.globalAlpha = this.alpha;
+                ctx.fillStyle = this.color;
+                ctx.font = `${this.isBold ? 'black' : 'bold'} 12px 'Inter'`;
+                ctx.textAlign = 'center';
+                ctx.fillText(this.text, this.x - camX, this.y - camY);
+                ctx.restore();
+            }
+        }
+
+        function collectXpGem(gem) {
+            config.xp += gem.value;
+            playSynthesizedSound('slash');
+            
+            // Level UP checks
+            if (config.xp >= config.xpNeeded) {
+                config.xp -= config.xpNeeded;
+                config.level++;
+                
+                // Scale XP curve
+                config.xpNeeded = Math.floor(config.xpNeeded * 1.4);
+
+                // Open AI portal
+                openForgePortal();
+            }
+            updateHUD();
+        }
+
+        function handleStageVictory() {
+            config.gameActive = false;
+            clearInterval(config.timerInterval);
+
+            // Display results screens
+            document.getElementById('gameResultOverlay').classList.remove('hidden');
+            document.getElementById('resultIcon').innerText = "🏆";
+            document.getElementById('resultTitle').innerText = "STAGE CLEARED!";
+            document.getElementById('resultTitle').className = "text-2xl font-black tracking-wider text-green-400";
+            document.getElementById('resultSubtitle').innerText = "기계 폭군 보스를 제압하고 최강 전장의 지배자로 등극하셨습니다!";
+
+            // Recaps UI
+            const min = Math.floor(config.elapsedTime / 60).toString().padStart(2, '0');
+            const sec = (config.elapsedTime % 60).toString().padStart(2, '0');
+            document.getElementById('recapTime').innerText = `${min}:${sec}`;
+            document.getElementById('recapKills').innerText = config.kills;
+        }
+
+        function handlePlayerDefeat() {
+            config.gameActive = false;
+            clearInterval(config.timerInterval);
+
+            // Display results
+            document.getElementById('gameResultOverlay').classList.remove('hidden');
+            document.getElementById('resultIcon').innerText = "💀";
+            document.getElementById('resultTitle').innerText = "GAME OVER";
+            document.getElementById('resultTitle').className = "text-2xl font-black tracking-wider text-rose-500";
+            document.getElementById('resultSubtitle').innerText = "무리의 압도적인 힘에 패배했습니다. 더 강력한 장비 프롬프트를 연구해 보세요!";
+
+            // Recaps UI
+            const min = Math.floor(config.elapsedTime / 60).toString().padStart(2, '0');
+            const sec = (config.elapsedTime % 60).toString().padStart(2, '0');
+            document.getElementById('recapTime').innerText = `${min}:${sec}`;
+            document.getElementById('recapKills').innerText = config.kills;
+        }
+
+        function gameLoop() {
+            if (config.gameActive) {
+                const now = performance.now();
+
+                // 1. Player updates & Health Regen (1.2 HP per second)
+                if (player.hp < player.maxHp) {
+                    player.hp = Math.min(player.maxHp, player.hp + 0.02);
+                }
+                updatePlayerMovement();
+
+                // 2. Automated Weapon Fire loop ticks
+                executeAutoWeaponsFire(now);
+
+                // 3. Spawns monsters on random intervals (starts slower, gets faster)
+                const spawnChance = 0.012 + Math.min(0.023, config.elapsedTime * 0.0003);
+                if (Math.random() < spawnChance) {
+                    spawnNormalMonster();
+                }
+
+                // 4. Update Projectiles
+                for (let i = projectiles.length - 1; i >= 0; i--) {
+                    const p = projectiles[i];
+                    p.x += p.vx;
+                    p.y += p.vy;
+                    p.life--;
+
+                    // Check boundaries or lifetime limits
+                    if (p.life <= 0 || p.x < 0 || p.x > config.worldWidth || p.y < 0 || p.y > config.worldHeight) {
+                        projectiles.splice(i, 1);
+                        continue;
+                    }
+
+                    // Bullet collisions with monsters
+                    for (let j = monsters.length - 1; j >= 0; j--) {
+                        const m = monsters[j];
+                        const dx = m.x - p.x;
+                        const dy = m.y - p.y;
+                        const dist = Math.sqrt(dx*dx + dy*dy);
+
+                        if (dist <= m.radius + p.radius) {
+                            dealDamageToMonster(m, p.damage, p.element);
+                            projectiles.splice(i, 1);
+                            break;
+                        }
+                    }
+                }
+
+                // 5. Update Monsters (Tracking movement toward player)
+                monsters.forEach(m => {
+                    const dx = player.x - m.x;
+                    const dy = player.y - m.y;
+                    const dist = Math.sqrt(dx*dx + dy*dy);
+
+                    if (dist > 5) {
+                        m.x += (dx / dist) * m.speed;
+                        m.y += (dy / dist) * m.speed;
+                    }
+
+                    // Screenshake decay calculations
+                    if (m.shaking > 0) m.shaking *= 0.8;
+
+                    // Monster colliding with player (deals damage)
+                    if (dist <= player.radius + m.radius) {
+                        if (now - m.damageTimer > 1000) { // Deal damage once per second
+                            player.hp = Math.max(0, player.hp - (m.isBoss ? 45 : 12));
+                            player.shaking = 10;
+                            m.damageTimer = now;
+
+                            // Flash damage text on player
+                            floatingTexts.push(new FloatingText(`-${m.isBoss ? 45 : 12}`, player.x, player.y - 10, '#fca5a5'));
+                            playSynthesizedSound('hit');
+
+                            if (player.hp <= 0) {
+                                handlePlayerDefeat();
+                            }
+                        }
+                    }
+                });
+
+                // Player Screenshake decay
+                if (player.shaking > 0) player.shaking *= 0.8;
+
+                // 6. Experience Gems updates (Magnitize pull toward player when close - range & speed buffed)
+                for (let i = xpGems.length - 1; i >= 0; i--) {
+                    const gem = xpGems[i];
+                    const dx = player.x - gem.x;
+                    const dy = player.y - gem.y;
+                    const dist = Math.sqrt(dx*dx + dy*dy);
+
+                    if (dist <= 200) { // Magnet pull radius (150 -> 200)
+                        gem.x += (dx / dist) * 7.5; // Speed (6.5 -> 7.5)
+                        gem.y += (dy / dist) * 7.5;
+                    }
+
+                    if (dist <= player.radius + gem.radius) {
+                        collectXpGem(gem);
+                        xpGems.splice(i, 1);
+                    }
+                }
+
+                // 7. Update visual decorative particles
+                for (let i = particles.length - 1; i >= 0; i--) {
+                    const p = particles[i];
+                    if (p.type === 'spark') {
+                        p.x += p.vx;
+                        p.y += p.vy;
+                    }
+                    p.life -= p.decay;
+                    if (p.life <= 0) {
+                        particles.splice(i, 1);
+                    }
+                }
+
+                // 8. Update Damage text lines
+                for (let i = floatingTexts.length - 1; i >= 0; i--) {
+                    floatingTexts[i].update();
+                    if (floatingTexts[i].alpha <= 0) {
+                        floatingTexts.splice(i, 1);
+                    }
+                }
+            }
+
+            // Draw visuals onto Canvas
+            drawArena();
+
+            // Loop callbacks
+            animationFrameId = requestAnimationFrame(gameLoop);
+        }
+
+        function drawArena() {
+            // Clean Canvas
+            ctx.fillStyle = '#020617';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Compute Camera translations (Lock relative to player coordinates)
+            const camX = player.x - canvas.width / 2;
+            const camY = player.y - canvas.height / 2;
+
+            // Draw clean high-tech gridlines background
+            ctx.strokeStyle = '#0f172a';
+            ctx.lineWidth = 1;
+            const gridSize = 40;
+            
+            // Grid alignment calculations relative to camera offset
+            const startGridX = Math.floor(camX / gridSize) * gridSize;
+            const startGridY = Math.floor(camY / gridSize) * gridSize;
+
+            for (let x = startGridX; x < startGridX + canvas.width + gridSize; x += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(x - camX, 0);
+                ctx.lineTo(x - camX, canvas.height);
+                ctx.stroke();
+            }
+            for (let y = startGridY; y < startGridY + canvas.height + gridSize; y += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(0, y - camY);
+                ctx.lineTo(canvas.width, y - camY);
+                ctx.stroke();
+            }
+
+            // Draw world boundaries boundaries bounds helper
+            ctx.strokeStyle = '#ef4444';
+            ctx.lineWidth = 4;
+            ctx.strokeRect(0 - camX, 0 - camY, config.worldWidth, config.worldHeight);
+
+            // 1. Draw Experience Gems
+            xpGems.forEach(gem => {
+                ctx.save();
+                
+                // Outer glow shadow
+                const gemGlow = ctx.createRadialGradient(gem.x - camX, gem.y - camY, 1, gem.x - camX, gem.y - camY, gem.radius + 6);
+                gemGlow.addColorStop(0, gem.color);
+                gemGlow.addColorStop(1, 'transparent');
+                ctx.fillStyle = gemGlow;
+                ctx.beginPath();
+                ctx.arc(gem.x - camX, gem.y - camY, gem.radius + 6, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(gem.x - camX, gem.y - camY, gem.radius, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.restore();
+            });
+
+            // 2. Draw Monsters
+            monsters.forEach(m => {
+                ctx.save();
+
+                // Shake offset computation
+                let shakeX = 0;
+                if (m.shaking > 0) {
+                    shakeX = (Math.random() - 0.5) * m.shaking;
+                }
+
+                const renderX = m.x - camX + shakeX;
+                const renderY = m.y - camY;
+
+                // Glowing outer ring for bosses
+                if (m.isBoss) {
+                    const bossGlow = ctx.createRadialGradient(renderX, renderY, 10, renderX, renderY, m.radius + 30);
+                    bossGlow.addColorStop(0, 'rgba(244, 63, 94, 0.35)');
+                    bossGlow.addColorStop(1, 'transparent');
+                    ctx.fillStyle = bossGlow;
+                    ctx.beginPath();
+                    ctx.arc(renderX, renderY, m.radius + 30, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                // Monster body
+                ctx.fillStyle = m.color;
+                ctx.strokeStyle = m.isBoss ? '#ffe4e6' : '#1e293b';
+                ctx.lineWidth = m.isBoss ? 4 : 2;
+                ctx.beginPath();
+                ctx.arc(renderX, renderY, m.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                // Eyes visual mapping
+                ctx.fillStyle = '#1e1b4b';
+                ctx.beginPath();
+                ctx.arc(renderX - (m.radius * 0.35), renderY - (m.radius * 0.1), m.radius * 0.15, 0, Math.PI * 2);
+                ctx.arc(renderX + (m.radius * 0.35), renderY - (m.radius * 0.1), m.radius * 0.15, 0, Math.PI * 2);
+                ctx.fill();
+
+                // HP Bar below monster
+                const barW = m.radius * 1.6;
+                const barH = m.isBoss ? 5 : 3;
+                const barY = renderY + m.radius + (m.isBoss ? 15 : 8);
+                ctx.fillStyle = '#475569';
+                ctx.fillRect(renderX - barW/2, barY, barW, barH);
+                
+                ctx.fillStyle = m.isBoss ? '#f43f5e' : '#10b981';
+                ctx.fillRect(renderX - barW/2, barY, barW * (m.hp / m.maxHp), barH);
+
+                // Boss Name
+                if (m.isBoss) {
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = "bold 10px 'Inter'";
+                    ctx.textAlign = 'center';
+                    ctx.fillText(m.name, renderX, barY - 6 - m.radius);
+                }
+
+                ctx.restore();
+            });
+
+            // 3. Draw Player Character
+            ctx.save();
+            let pShakeX = 0;
+            if (player.shaking > 0) {
+                pShakeX = (Math.random() - 0.5) * player.shaking;
+            }
+            const pRenderX = player.x - camX + pShakeX;
+            const pRenderY = player.y - camY;
+
+            // Player Halo glowing shadow
+            const pGlow = ctx.createRadialGradient(pRenderX, pRenderY, 5, pRenderX, pRenderY, player.radius + 15);
+            pGlow.addColorStop(0, 'rgba(99, 102, 241, 0.45)');
+            pGlow.addColorStop(1, 'transparent');
+            ctx.fillStyle = pGlow;
+            ctx.beginPath();
+            ctx.arc(pRenderX, pRenderY, player.radius + 15, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Player body base
+            ctx.fillStyle = player.color;
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(pRenderX, pRenderY, player.radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            // Visor eyes
+            ctx.fillStyle = '#38bdf8';
+            ctx.fillRect(pRenderX - 4, pRenderY - 6, 12, 3);
+
+            // Active Orbits (Render weapon orbiters circulating the hero)
+            player.weapons.forEach((wp, index) => {
+                if (wp.weaponType === 'Orbit') {
+                    const orbitalCount = 3; // Render 3 spinning shields per equipped orbit type
+                    const speedMultiplier = 0.0015;
+                    const angleOffset = (performance.now() * speedMultiplier) + (index * (Math.PI * 2 / player.weapons.length));
+                    
+                    for (let j = 0; j < orbitalCount; j++) {
+                        const subAngle = angleOffset + (j * (Math.PI * 2 / orbitalCount));
+                        const orbX = pRenderX + Math.cos(subAngle) * wp.range;
+                        const orbY = pRenderY + Math.sin(subAngle) * wp.range;
+
+                        // Check collisions with monsters while updating orbital positions
+                        monsters.forEach(m => {
+                            // Map coordinate space to absolute positions
+                            const absOrbX = player.x + Math.cos(subAngle) * wp.range;
+                            const absOrbY = player.y + Math.sin(subAngle) * wp.range;
+                            const dx = m.x - absOrbX;
+                            const dy = m.y - absOrbY;
+                            const dist = Math.sqrt(dx*dx + dy*dy);
+
+                            if (dist <= m.radius + 12) {
+                                dealDamageToMonster(m, wp.damage, wp.element);
+                            }
+                        });
+
+                        // Draw rotating shield core
+                        ctx.fillStyle = wp.projectileColor;
+                        ctx.strokeStyle = '#ffffff';
+                        ctx.lineWidth = 1.5;
+                        ctx.beginPath();
+                        ctx.arc(orbX, orbY, 8, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.stroke();
+                    }
+                }
+            });
+
+            // Player Status HP Bar float
+            const pHpW = player.radius * 2.2;
+            const pHpH = 5;
+            const pHpY = pRenderY + player.radius + 12;
+            ctx.fillStyle = '#1e293b';
+            ctx.beginPath();
+            ctx.roundRect(pRenderX - pHpW/2, pHpY, pHpW, pHpH, 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#ef4444';
+            ctx.beginPath();
+            ctx.roundRect(pRenderX - pHpW/2, pHpY, pHpW * (player.hp / player.maxHp), pHpH, 2);
+            ctx.fill();
+
+            ctx.restore();
+
+            // 4. Draw Projectiles
+            projectiles.forEach(p => {
+                ctx.save();
+                ctx.fillStyle = p.color;
+                
+                // Trail particle glow
+                const pGlow = ctx.createRadialGradient(p.x - camX, p.y - camY, 1, p.x - camX, p.y - camY, p.radius + 4);
+                pGlow.addColorStop(0, p.color);
+                pGlow.addColorStop(1, 'transparent');
+                ctx.fillStyle = pGlow;
+                ctx.beginPath();
+                ctx.arc(p.x - camX, p.y - camY, p.radius + 4, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(p.x - camX, p.y - camY, p.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            });
+
+            // 5. Draw Visual Swipe/Slash Rings & Lasers
+            particles.forEach(p => {
+                ctx.save();
+                if (p.type === 'slash_ring') {
+                    ctx.strokeStyle = p.color;
+                    ctx.globalAlpha = p.life;
+                    ctx.lineWidth = 4 * p.life;
+                    ctx.beginPath();
+                    ctx.arc(p.x - camX, p.y - camY, p.radius * (1 - p.life * 0.4), 0, Math.PI * 2);
+                    ctx.stroke();
+                } else if (p.type === 'laser_beam') {
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 6 * p.life;
+                    ctx.shadowColor = p.color;
+                    ctx.shadowBlur = 10;
+                    ctx.globalAlpha = p.life;
+                    ctx.beginPath();
+                    ctx.moveTo(p.x1 - camX, p.y1 - camY);
+                    ctx.lineTo(p.x2 - camX, p.y2 - camY);
+                    ctx.stroke();
+                } else if (p.type === 'spark') {
+                    ctx.fillStyle = p.color;
+                    ctx.globalAlpha = p.life;
+                    ctx.beginPath();
+                    ctx.arc(p.x - camX, p.y - camY, p.radius, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.restore();
+            });
+
+            // 6. Draw Damage popups
+            floatingTexts.forEach(txt => txt.draw(ctx, camX, camY));
+        }
+
+    </script>
+</body>
+</html>
