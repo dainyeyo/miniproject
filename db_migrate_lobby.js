@@ -35,6 +35,7 @@ async function runMigration() {
       CREATE TABLE IF NOT EXISTS game_rooms (
         room_code VARCHAR(10) PRIMARY KEY,
         status VARCHAR(20) DEFAULT 'waiting',
+        game_mode VARCHAR(20) DEFAULT 'human',
         current_round INT DEFAULT 1,
         max_round INT DEFAULT 5,
         current_keyword VARCHAR(100) DEFAULT '',

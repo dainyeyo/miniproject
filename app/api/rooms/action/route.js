@@ -37,6 +37,20 @@ export async function POST(request) {
 
     // 2. 액션별 분기 처리
     switch (action) {
+      case 'update-settings': {
+        if (!player.is_host) {
+          await client.end();
+          return NextResponse.json({ error: '방장만 방 설정을 변경할 수 있습니다.' }, { status: 403 });
+        }
+
+        const { gameMode, maxRound } = payload;
+        await client.query(
+          'UPDATE game_rooms SET game_mode = COALESCE($1, game_mode), max_round = COALESCE($2, max_round) WHERE room_code = $3',
+          [gameMode, maxRound, normalizedCode]
+        );
+        break;
+      }
+
       case 'start-game': {
         if (!player.is_host) {
           await client.end();

@@ -541,6 +541,12 @@ export default function GamePage() {
           setIsHost(me.is_host);
         }
 
+        // 1.5. 방장이 아닌 경우에만 데이터베이스의 게임 설정 동기화
+        if (me && !me.is_host) {
+          if (room.game_mode) setSelectedMode(room.game_mode);
+          if (room.max_round) setMaxRound(room.max_round);
+        }
+
         // 2. 출제자 상태 업데이트
         const amIDrawer = room.current_drawer_id === playerId;
         setIsDrawer(amIDrawer);
@@ -701,6 +707,28 @@ export default function GamePage() {
       }
     }
     setCurrentScreen('screen-waiting');
+  };
+
+  // 방 설정 동기화 업데이트 API 호출 (방장용)
+  const updateRoomSettings = async (newMode, newMaxRound) => {
+    if (!roomCode || !playerId) return;
+    try {
+      await fetch('/api/rooms/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomCode,
+          playerId,
+          action: 'update-settings',
+          payload: {
+            gameMode: newMode || selectedMode,
+            maxRound: newMaxRound || maxRound
+          }
+        })
+      });
+    } catch (err) {
+      console.error('Failed to sync settings:', err);
+    }
   };
 
   // ==========================================
@@ -1112,9 +1140,14 @@ export default function GamePage() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <div 
                     className={`mode-desc-card ${selectedMode === 'human' ? 'active-mode' : ''}`}
-                    onClick={() => setSelectedMode('human')}
+                    onClick={() => {
+                      if (isHost) {
+                        setSelectedMode('human');
+                        updateRoomSettings('human', null);
+                      }
+                    }}
                     style={{ 
-                      cursor: 'pointer', 
+                      cursor: isHost ? 'pointer' : 'not-allowed', 
                       border: selectedMode === 'human' ? '3px solid var(--color-primary)' : '2px solid var(--color-border)',
                       borderRadius: '16px',
                       padding: '14px',
@@ -1127,9 +1160,14 @@ export default function GamePage() {
                   </div>
                   <div 
                     className={`mode-desc-card ${selectedMode === 'ai' ? 'active-mode' : ''}`}
-                    onClick={() => setSelectedMode('ai')}
+                    onClick={() => {
+                      if (isHost) {
+                        setSelectedMode('ai');
+                        updateRoomSettings('ai', null);
+                      }
+                    }}
                     style={{ 
-                      cursor: 'pointer', 
+                      cursor: isHost ? 'pointer' : 'not-allowed', 
                       border: selectedMode === 'ai' ? '3px solid var(--color-secondary)' : '2px solid var(--color-border)',
                       borderRadius: '16px',
                       padding: '14px',
@@ -1150,7 +1188,17 @@ export default function GamePage() {
                 <div className="custom-settings-panel">
                   <div className="custom-option">
                     <label>라운드 수</label>
-                    <select value={`${maxRound} 라운드`} onChange={(e) => setMaxRound(parseInt(e.target.value, 10))}>
+                    <select 
+                      value={`${maxRound} 라운드`} 
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        if (isHost) {
+                          setMaxRound(val);
+                          updateRoomSettings(null, val);
+                        }
+                      }}
+                      disabled={!isHost}
+                    >
                       <option value="3 라운드">3 라운드</option>
                       <option value="5 라운드">5 라운드</option>
                       <option value="8 라운드">8 라운드</option>
@@ -1158,7 +1206,7 @@ export default function GamePage() {
                   </div>
                   <div className="custom-option">
                     <label>인공지능 난이도</label>
-                    <select><option>보통 (Soft)</option><option>매우 창의적 (Wild)</option></select>
+                    <select disabled={!isHost}><option>보통 (Soft)</option><option>매우 창의적 (Wild)</option></select>
                   </div>
                 </div>
               </section>
