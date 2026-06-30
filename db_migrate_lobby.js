@@ -65,6 +65,21 @@ async function runMigration() {
     console.log('3. 성능 탐색 최적화를 위한 인덱스 생성 중...');
     await client.query('CREATE INDEX IF NOT EXISTS idx_players_room_code ON players(room_code);');
 
+    // 4. chat_messages 테이블 생성
+    console.log('4. chat_messages 테이블 생성 중...');
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS chat_messages (
+        id SERIAL PRIMARY KEY,
+        room_code VARCHAR(10) NOT NULL,
+        player_id VARCHAR(50) NOT NULL,
+        nickname VARCHAR(50) NOT NULL,
+        message TEXT NOT NULL,
+        type VARCHAR(20) DEFAULT 'chat',
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_chat_room_code ON chat_messages(room_code);');
+
     await client.query('COMMIT');
     console.log('\x1b[32m[성공] 멀티플레이어 테이블 마이그레이션이 완료되었습니다!\x1b[0m');
 

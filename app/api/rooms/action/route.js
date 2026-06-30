@@ -164,6 +164,12 @@ export async function POST(request) {
                 [current_drawer_id]
               );
             }
+
+            // 챗 로그에도 정답 알림 기록 추가 (다른 유저 피드 동기화용)
+            await client.query(
+              "INSERT INTO chat_messages (room_code, player_id, nickname, message, type) VALUES ($1, $2, $3, $4, 'system-msg')",
+              [normalizedCode, playerId, player.nickname, `🎉 ${player.nickname}님이 정답을 맞혔습니다! (+100 pts)`]
+            );
             
             await client.query('COMMIT');
           }

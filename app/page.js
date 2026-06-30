@@ -71,6 +71,7 @@ export default function GamePage() {
   const aiReconnectTimerRef = useRef(null);
   const aiDebounceTimerRef = useRef(null);
   const lastAiPromptRef = useRef('');
+  const lastChatMsgIdRef = useRef(0);
 
   const canvasRef = useRef(null);
   const isDrawingRef = useRef(false);
@@ -509,15 +510,38 @@ export default function GamePage() {
 
     const pollInterval = setInterval(async () => {
       try {
-        const res = await fetch(`/api/rooms/status?roomCode=${roomCode}&playerId=${playerId}`);
-        const data = await res.json();
+        const [statusRes, chatRes] = await Promise.all([
+          fetch(`/api/rooms/status?roomCode=${roomCode}&playerId=${playerId}`),
+          fetch(`/api/rooms/chat?roomCode=${roomCode}&lastMsgId=${lastChatMsgIdRef.current}`)
+        ]);
+
+        const data = await statusRes.json();
+        const chatData = await chatRes.json();
         
-        if (!res.ok) {
+        if (!statusRes.ok) {
           clearInterval(pollInterval);
           alert(data.error || '방에서 퇴장되었거나 존재하지 않는 방입니다.');
           cleanupAiGenerator();
           setCurrentScreen('screen-landing');
           return;
+        }
+
+        // 0. 신규 채팅 로그 반영
+        if (chatRes.ok && chatData.messages && chatData.messages.length > 0) {
+          const newLogs = chatData.messages.map(msg => {
+            if (msg.id > lastChatMsgIdRef.current) {
+              lastChatMsgIdRef.current = msg.id;
+            }
+            if (msg.type === 'system-msg') {
+              return { type: 'system-msg', text: msg.message };
+            }
+            return {
+              type: 'chat-msg',
+              user: msg.nickname + (msg.player_id === playerId ? ' (나)' : ''),
+              text: msg.message
+            };
+          });
+          setChatLog(prev => [...prev, ...newLogs]);
         }
 
         const room = data.room;
@@ -589,7 +613,7 @@ export default function GamePage() {
       } catch (err) {
         console.error('Polling 상태 업데이트 중 에러 발생:', err);
       }
-    }, 2000);
+    }, 1200);
 
     return () => clearInterval(pollInterval);
   }, [roomCode, playerId, currentScreen, selectedMode]);
@@ -868,13 +892,32 @@ export default function GamePage() {
   // ==========================================
   // 8. 클라이언트 채팅 메시지 송신 & 정답 매칭
   // ==========================================
+  const sendChatMessage = async (message, type = 'chat') => {
+    if (!roomCode || !playerId) return;
+    try {
+      await fetch('/api/rooms/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomCode,
+          playerId,
+          nickname,
+          message,
+          type
+        })
+      });
+    } catch (err) {
+      console.error('Failed to send chat message:', err);
+    }
+  };
+
   const handleChatSubmit = async (e) => {
     e.preventDefault();
     if (!chatInput.trim()) return;
 
     if (currentScreen === 'screen-game') {
       if (isDrawer) {
-        appendFeed(nickname, chatInput, 'chat-msg');
+        sendChatMessage(chatInput, 'chat');
         setChatInput('');
         return;
       }
@@ -893,17 +936,16 @@ export default function GamePage() {
         const data = await res.json();
         
         if (res.ok && data.isCorrect) {
-          appendFeed(nickname, chatInput, 'correct-answer');
-          addSystemMsg(`🎉 축하합니다! 정답 [${data.keyword}]을(를) 맞혔습니다! (+100 pts)`);
+          // 정답 처리 시, action API 내부에서 chat_messages 테이블에 알림을 삽입하므로 대기
         } else {
-          appendFeed(nickname, chatInput, 'chat-msg');
+          sendChatMessage(chatInput, 'chat');
         }
       } catch (err) {
         console.error('Failed to submit guess:', err);
-        appendFeed(nickname, chatInput, 'chat-msg');
+        sendChatMessage(chatInput, 'chat');
       }
     } else {
-      appendFeed(nickname, chatInput, 'chat-msg');
+      sendChatMessage(chatInput, 'chat');
     }
     setChatInput('');
   };
@@ -926,6 +968,7 @@ export default function GamePage() {
   };
 
   const handleDrawingStart = (e) => {
+    if (!isDrawer) return; // 출제자만 그리기 가능
     const canvas = canvasRef.current;
     if (!canvas) return;
     
@@ -935,6 +978,7 @@ export default function GamePage() {
   };
 
   const handleDrawingMove = (e) => {
+    if (!isDrawer) return; // 출제자만 그리기 가능
     if (!isDrawingRef.current) return;
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
