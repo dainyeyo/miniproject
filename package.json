@@ -5,7 +5,9 @@
   "main": "app.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "npx http-server -p 8080"
+    "dev": "next dev -p 8080",
+    "build": "next build",
+    "start": "next start"
   },
   "repository": {
     "type": "git",
@@ -14,13 +16,15 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
   "bugs": {
     "url": "https://github.com/dainyeyo/miniproject/issues"
   },
   "homepage": "https://github.com/dainyeyo/miniproject#readme",
   "dependencies": {
     "dotenv": "^17.4.2",
-    "pg": "^8.22.0"
+    "next": "^14.2.3",
+    "pg": "^8.22.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   }
 }
