@@ -5,3 +5,7 @@ npm-debug.log*
 .DS_Store
 Thumbs.db
 .vscode/
+
+# Next.js build output
+.next/
+out/
