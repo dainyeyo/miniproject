@@ -528,20 +528,23 @@ export default function GamePage() {
 
         // 0. 신규 채팅 로그 반영
         if (chatRes.ok && chatData.messages && chatData.messages.length > 0) {
-          const newLogs = chatData.messages.map(msg => {
-            if (msg.id > lastChatMsgIdRef.current) {
-              lastChatMsgIdRef.current = msg.id;
-            }
-            if (msg.type === 'system-msg') {
-              return { type: 'system-msg', text: msg.message };
-            }
-            return {
-              type: 'chat-msg',
-              user: msg.nickname + (msg.player_id === playerId ? ' (나)' : ''),
-              text: msg.message
-            };
-          });
-          setChatLog(prev => [...prev, ...newLogs]);
+          const newMessages = chatData.messages.filter(msg => msg.id > lastChatMsgIdRef.current);
+          if (newMessages.length > 0) {
+            const newLogs = newMessages.map(msg => {
+              if (msg.id > lastChatMsgIdRef.current) {
+                lastChatMsgIdRef.current = msg.id;
+              }
+              if (msg.type === 'system-msg') {
+                return { type: 'system-msg', text: msg.message };
+              }
+              return {
+                type: 'chat-msg',
+                user: msg.nickname + (msg.player_id === playerId ? ' (나)' : ''),
+                text: msg.message
+              };
+            });
+            setChatLog(prev => [...prev, ...newLogs]);
+          }
         }
 
         const room = data.room;
@@ -595,8 +598,26 @@ export default function GamePage() {
 
         // 4. 세부 라운드 및 그림 데이터 동기화
         if (room.status === 'game') {
-          setCurrentRound(room.current_round);
           setMaxRound(room.max_round);
+
+          // 라운드가 변경되었을 때 타이머 및 화면 리셋
+          if (room.current_round !== currentRound) {
+            setCurrentRound(room.current_round);
+            setTimerSeconds(45);
+            setTimerMax(45);
+            setCanvasDataFromDb('');
+            setAiImageSrc(null);
+            clearCanvas();
+            
+            if (amIDrawer) {
+              addSystemMsg(`🎨 Round ${room.current_round} 시작! 제시어를 확인해 주세요.`);
+              if (selectedMode === 'ai') {
+                triggerAiDrawing(room.current_keyword);
+              }
+            } else {
+              addSystemMsg(`🎨 Round ${room.current_round} 시작! 출제자가 그림을 그리고 있습니다.`);
+            }
+          }
 
           if (amIDrawer) {
             setCurrentKeyword(room.current_keyword);
@@ -616,7 +637,7 @@ export default function GamePage() {
     }, 1200);
 
     return () => clearInterval(pollInterval);
-  }, [roomCode, playerId, currentScreen, selectedMode]);
+  }, [roomCode, playerId, currentScreen, selectedMode, currentRound]);
 
   // 비비출제자용 캔버스 동기화 Effect
   useEffect(() => {
