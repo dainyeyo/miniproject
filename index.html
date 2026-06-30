@@ -273,13 +273,6 @@
           </div>
         </div>
 
-        <div class="topbar-center">
-          <div class="keyword-box">
-            <span class="keyword-label">제시어</span>
-            <span class="keyword-text" id="game-keyword-display">계란 후라이 (Fried Egg)</span>
-          </div>
-        </div>
-
         <div class="topbar-right">
           <!-- Countdown Timer Circle -->
           <div class="timer-container">
@@ -319,6 +312,11 @@
           <!-- View A: HTML5 Canvas Board (Human Drawing Mode) -->
           <div id="subview-canvas" class="sub-game-view active-subview">
             <div class="canvas-wrapper">
+              <!-- 캔버스 오버레이 제시어 보드 (그림판 왼쪽 위에 고정 플로팅) -->
+              <div class="keyword-box canvas-keyword-overlay">
+                <span class="keyword-label">제시어</span>
+                <span class="keyword-text" id="game-keyword-display">계란 후라이 (Fried Egg)</span>
+              </div>
               <canvas id="drawing-canvas" width="700" height="460"></canvas>
             </div>
             
@@ -527,9 +525,36 @@
       </div>
     </main>
 
+    <!-- ========================================== -->
+    <!-- 5. RESULT SCREEN (GAME OVER / RANKINGS)     -->
+    <!-- ========================================== -->
+    <main id="screen-result" class="screen-view" style="display: none;">
+      <div class="result-card">
+        
+        <header class="result-header">
+          <div class="trophy-wrapper">🏆</div>
+          <h2 class="result-title">최종 순위 발표</h2>
+          <p class="result-desc">플레이어들의 총 득점을 정산한 결과입니다!</p>
+        </header>
+
+        <!-- Dynamic Rank Slots Container -->
+        <div class="ranking-board" id="ranking-board-container">
+          <!-- JS에 의해 동적 생성됩니다 -->
+        </div>
+
+        <footer class="result-footer">
+          <button id="btn-result-go-home" class="btn-primary btn-bounce">
+            대기실로 돌아가기 (Lobby)
+          </button>
+        </footer>
+
+      </div>
+    </main>
+
   </div>
 
   <!-- Scripts -->
+  <script src="words.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -19,6 +19,10 @@ document.addEventListener('DOMContentLoaded', () => {
     myScore: 350,
     liarRole: 'citizen',   // 'citizen' or 'liar'
     liarTarget: 'Player 3', // 누가 라이어인지
+    currentKeyword: '계란 후라이', // 시민 제시어 (동적 변경 예정)
+    liarKeyword: '달걀말이',       // 라이어 제시어 (동적 변경 예정)
+    currentRound: 1,               // 현재 라운드 수
+    maxRound: 5,                   // 설정된 최대 라운드 수
     
     // Players list (index 0 is always 'Me')
     players: [
@@ -62,6 +66,65 @@ document.addEventListener('DOMContentLoaded', () => {
   ];
   let botChatIndex = 0;
 
+  // ==========================================
+  // Neon DB 연동 단어 풀 공급 및 방어적 폴백 지정
+  // ==========================================
+  const wordPool = (typeof EGGG_WORDS !== 'undefined' && Array.isArray(EGGG_WORDS) && EGGG_WORDS.length > 0)
+    ? EGGG_WORDS
+    : ['계란 후라이', '달걀말이', '오므라이스', '닭고기', '병아리', '달걀껍질', '둥지'];
+
+  // 단어 풀에서 중복 없이 무작위 N개의 단어를 선택하는 헬퍼 함수 (SRP)
+  function getRandomWords(count) {
+    const shuffled = [...wordPool].sort(() => 0.5 - Math.random());
+    return shuffled.slice(0, count);
+  }
+
+  // 정답 판단을 위한 텍스트 노이즈 정제 헬퍼 (공백 및 특수문자 제거, 대소문자 통일)
+  function normalizeText(txt) {
+    return txt.toLowerCase().replace(/[^a-zA-Z0-9가-힣]/g, '');
+  }
+
+  // 라운드 정보 헤더 UI 갱신 함수 (SRP)
+  function updateRoundUI() {
+    const roundInfoEl = document.getElementById('round-info');
+    if (roundInfoEl) {
+      roundInfoEl.textContent = `Round ${state.currentRound} / ${state.maxRound}`;
+    }
+  }
+
+  // 최종 등수 화면 렌더링 함수 (정렬 및 동적 바인딩)
+  function renderGameResults() {
+    const rankingContainer = document.getElementById('ranking-board-container');
+    if (!rankingContainer) return;
+    
+    rankingContainer.innerHTML = '';
+    
+    // 점수 기준 내림차순 정렬
+    const sortedPlayers = [...state.players].sort((a, b) => b.score - a.score);
+    
+    sortedPlayers.forEach((player, index) => {
+      const rank = index + 1;
+      const card = document.createElement('div');
+      
+      // 순위별 그라데이션 하이라이팅 적용 및 본인 식별 보조 클래스 추가
+      card.className = `ranking-card rank-${rank} ${player.isMe ? 'is-me-rank' : ''}`;
+      
+      const badgeIcon = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : rank;
+      
+      card.innerHTML = `
+        <div class="rank-badge">${badgeIcon}</div>
+        <div class="rank-avatar">${player.avatar}</div>
+        <div class="rank-name-wrapper">
+          <span class="rank-name">${player.name}</span>
+          <span class="rank-score">${player.score} pts</span>
+        </div>
+      `;
+      rankingContainer.appendChild(card);
+    });
+  }
+
+
+
 
   // ==========================================
   // 2. DOM Elements Cache
@@ -70,7 +133,8 @@ document.addEventListener('DOMContentLoaded', () => {
     landing: document.getElementById('screen-landing'),
     waiting: document.getElementById('screen-waiting'),
     game: document.getElementById('screen-game'),
-    voting: document.getElementById('screen-voting')
+    voting: document.getElementById('screen-voting'),
+    result: document.getElementById('screen-result')
   };
 
   // Screen 1: Landing
@@ -333,6 +397,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // ==========================================
   if (btnLobbyStart) {
     btnLobbyStart.addEventListener('click', () => {
+      // 새로운 게임 세션 시작에 따른 채팅 로그 소거
+      if (chatLogContainer) chatLogContainer.innerHTML = '';
+
       // 봇이 한 명도 없으면 재미를 위해 봇 3명을 강제로 자동 초대하고 시작
       if (state.players.length === 1) {
         for (let i = 0; i < 3; i++) {
@@ -350,15 +417,41 @@ document.addEventListener('DOMContentLoaded', () => {
         lobbyPlayerCountEl.textContent = state.players.length;
       }
 
+      // 대기실의 라운드 수 커스텀 설정 바인딩
+      const roundSelect = document.querySelector('.custom-settings-panel select');
+      if (roundSelect) {
+        const roundText = roundSelect.value;
+        const matchedNum = roundText.match(/\d+/);
+        state.maxRound = matchedNum ? parseInt(matchedNum[0], 10) : 5;
+      } else {
+        state.maxRound = 5;
+      }
+      state.currentRound = 1;
+      updateRoundUI();
+
       // Enter Room matching selected mode
+      const keywordDisplay = document.getElementById('game-keyword-display');
+
       if (state.selectedMode === 'human') {
         modeBadge.textContent = '일반 모드';
         modeBadge.style.backgroundColor = 'var(--color-border)';
         restoreHumanDrawingMode();
+        
+        // 동적 단어 할당
+        const [randWord] = getRandomWords(1);
+        state.currentKeyword = randWord;
+        if (keywordDisplay) keywordDisplay.textContent = randWord;
+        
         switchScreen('screen-game');
       } else if (state.selectedMode === 'ai') {
         modeBadge.textContent = 'AI 드로잉 모드';
         modeBadge.style.backgroundColor = 'var(--color-secondary)';
+        
+        // 동적 단어 할당
+        const [randWord] = getRandomWords(1);
+        state.currentKeyword = randWord;
+        if (keywordDisplay) keywordDisplay.textContent = randWord;
+        
         triggerAiDrawingSimulation();
         switchScreen('screen-game');
       } else if (state.selectedMode === 'liar') {
@@ -369,20 +462,23 @@ document.addEventListener('DOMContentLoaded', () => {
         // 50% chance to be Liar or Citizen
         state.liarRole = Math.random() > 0.5 ? 'liar' : 'citizen';
         
-        // Setup different keywords
-        const keywordDisplay = document.getElementById('game-keyword-display');
+        // Neon DB 단어 풀에서 시민 단어와 라이어 단어 동적 무작위 추출
+        const [citizenWord, liarWord] = getRandomWords(2);
+        state.currentKeyword = citizenWord;
+        state.liarKeyword = liarWord;
+        
         if (state.liarRole === 'liar') {
-          keywordDisplay.textContent = '달걀말이 (Egg Roll)';
+          if (keywordDisplay) keywordDisplay.textContent = state.liarKeyword;
           switchScreen('screen-game');
           setTimeout(() => {
             addSystemMsg('😈 당신은 [라이어]입니다! 다른 제시어가 주어졌습니다.');
-            addSystemMsg('시민들이 모두 똑같이 그릴 때, 진짜 제시어가 무엇일지 눈치껏 유추하면서 들키지 않게 [달걀말이]를 그리세요!');
+            addSystemMsg(`시민들이 모두 똑같이 그릴 때, 진짜 제시어가 무엇일지 눈치껏 유추하면서 들키지 않게 [${state.liarKeyword}]를 그리세요!`);
           }, 300);
         } else {
-          keywordDisplay.textContent = '계란 후라이 (Fried Egg)';
+          if (keywordDisplay) keywordDisplay.textContent = state.currentKeyword;
           switchScreen('screen-game');
           setTimeout(() => {
-            addSystemMsg('📢 당신은 [시민]입니다. 시민의 제시어는 [계란 후라이]입니다.');
+            addSystemMsg(`📢 당신은 [시민]입니다. 시민의 제시어는 [${state.currentKeyword}]입니다.`);
             addSystemMsg('모두가 같은 그림을 그리는 가운데, 혼자 엉뚱한 그림을 그리는 라이어를 찾아내세요.');
           }, 300);
         }
@@ -393,10 +489,16 @@ document.addEventListener('DOMContentLoaded', () => {
         modeBadge.textContent = 'AI 찾기';
         modeBadge.style.backgroundColor = 'var(--color-secondary)';
         restoreHumanDrawingMode();
+        
+        // 동적 단어 할당
+        const [randWord] = getRandomWords(1);
+        state.currentKeyword = randWord;
+        if (keywordDisplay) keywordDisplay.textContent = randWord;
+        
         switchScreen('screen-game');
         setTimeout(() => {
           addSystemMsg('📢 [AI 찾기] 모드에 오신 것을 환영합니다!');
-          addSystemMsg('제시어는 [계란 후라이]입니다. 플레이어들의 손그림 속에 숨어있는 진짜 AI의 그림을 찾아 투표하세요.');
+          addSystemMsg(`제시어는 [${state.currentKeyword}]입니다. 플레이어들의 손그림 속에 숨어있는 진짜 AI의 그림을 찾아 투표하세요.`);
         }, 300);
       } else {
         // Fallback for speedrun, sandwich, icebreaker
@@ -408,6 +510,12 @@ document.addEventListener('DOMContentLoaded', () => {
         modeBadge.textContent = modesMap[state.selectedMode] || 'EGGG 모드';
         modeBadge.style.backgroundColor = 'var(--color-purple)';
         restoreHumanDrawingMode();
+        
+        // 동적 단어 할당
+        const [randWord] = getRandomWords(1);
+        state.currentKeyword = randWord;
+        if (keywordDisplay) keywordDisplay.textContent = randWord;
+        
         switchScreen('screen-game');
       }
     });
@@ -489,10 +597,39 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function handleTimerEnd() {
     if (state.currentScreen === 'screen-game') {
-      addSystemMsg('⏳ 시간 초과! 투표 단계로 전환합니다.');
-      setTimeout(() => {
-        switchScreen('screen-voting');
-      }, 1500);
+      // 라이어 모드와 AI 찾기 모드는 기존대로 투표 단계로 넘어감
+      if (state.selectedMode === 'liar' || state.selectedMode === 'find-ai') {
+        addSystemMsg('⏳ 시간 초과! 투표 단계로 전환합니다.');
+        setTimeout(() => {
+          switchScreen('screen-voting');
+        }, 1500);
+      } else {
+        // 일반, AI 드로잉, 스피드런 등 비투표 모드는 라운드 순환 루프 진행
+        if (state.currentRound < state.maxRound) {
+          addSystemMsg(`⏳ 라운드 종료! 2초 뒤 다음 라운드로 전환합니다.`);
+          setTimeout(() => {
+            state.currentRound++;
+            updateRoundUI();
+            
+            // 다음 라운드용 새 단어 동적 할당
+            const [randWord] = getRandomWords(1);
+            state.currentKeyword = randWord;
+            const keywordDisplay = document.getElementById('game-keyword-display');
+            if (keywordDisplay) keywordDisplay.textContent = randWord;
+            
+            clearCanvas();
+            startTimer(45);
+            addSystemMsg(`🎨 Round ${state.currentRound} 시작! 제시어를 확인해 주세요.`);
+          }, 2000);
+        } else {
+          // 최대 라운드 도달 시 게임 종료 및 최종 랭킹 표출
+          addSystemMsg('🏆 모든 라운드가 종료되었습니다! 최종 결과를 발표합니다.');
+          setTimeout(() => {
+            renderGameResults();
+            switchScreen('screen-result');
+          }, 2000);
+        }
+      }
     } else if (state.currentScreen === 'screen-voting') {
       addSystemMsg('⏳ 투표가 종료되었습니다! 결과를 공개합니다.');
       revealVoteResults();
@@ -551,16 +688,39 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function setupCanvasSize() {
     if (!canvas) return;
+    
+    // 기존 캔버스 내용 임시 보존 (방어적 프로그래밍)
+    let tempCanvas = null;
+    if (canvas.width > 0 && canvas.height > 0) {
+      tempCanvas = document.createElement('canvas');
+      tempCanvas.width = canvas.width;
+      tempCanvas.height = canvas.height;
+      const tempCtx = tempCanvas.getContext('2d');
+      tempCtx.drawImage(canvas, 0, 0);
+    }
+
     const rect = canvas.parentNode.getBoundingClientRect();
-    canvas.width = rect.width || 700;
-    canvas.height = rect.height || 460;
+    const newWidth = rect.width || 700;
+    const newHeight = rect.height || 460;
+    
+    canvas.width = newWidth;
+    canvas.height = newHeight;
     
     if (ctx) {
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, newWidth, newHeight);
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
-      clearCanvas();
+      
+      // 보존된 내용 복원 (스케일 자동 매핑)
+      if (tempCanvas) {
+        ctx.drawImage(tempCanvas, 0, 0, tempCanvas.width, tempCanvas.height, 0, 0, newWidth, newHeight);
+      }
     }
   }
+
+  // 창 크기 변경에 따른 캔버스 실시간 자동 반응형 리사이징 적용
+  window.addEventListener('resize', setupCanvasSize);
 
   function startDrawing(e) {
     state.isDrawing = true;
@@ -671,8 +831,12 @@ document.addEventListener('DOMContentLoaded', () => {
       triggerAutoBotReply();
 
       // Check Correct Answer
-      const cleanText = text.toLowerCase().replace(/\s+/g, '');
-      if (cleanText === '계란후라이' || cleanText === 'friedegg' || cleanText === 'egg' || cleanText === '달걀') {
+      // Check Correct Answer
+      const cleanText = normalizeText(text);
+      const cleanKeyword = normalizeText(state.currentKeyword);
+      
+      // 입력 텍스트와 현재 제시어가 일치하거나 포함되는지 정답 대조
+      if (cleanText === cleanKeyword || (cleanKeyword.length > 1 && cleanText.includes(cleanKeyword))) {
         setTimeout(() => {
           appendFeed(`🎉 <strong class="correct-user">${state.nickname} (나)</strong>님이 정답을 맞혔습니다! (+100점)`, 'correct-answer');
           state.myScore += 100;
@@ -896,7 +1060,7 @@ document.addEventListener('DOMContentLoaded', () => {
         badge.className = 'vote-card-badge liar-badge';
         
         if (state.selectedMode === 'liar') {
-          badge.textContent = `👑 진짜 라이어 (달걀말이)`;
+          badge.textContent = `👑 진짜 라이어 (${state.liarKeyword})`;
         } else {
           badge.textContent = `👑 진짜 AI (Liar)`;
         }
@@ -914,13 +1078,13 @@ document.addEventListener('DOMContentLoaded', () => {
       if (state.selectedMode === 'liar') {
         if (state.liarRole === 'liar') {
           if (targetPercentage >= 40) {
-            appendFeed(`📢 투표 결과: 시민 승리! 당신(라이어)은 ${targetPercentage}%의 표를 받아 검거되었습니다. (실제 제시어: 달걀말이)`, 'liar-reveal-msg');
+            appendFeed(`📢 투표 결과: 시민 승리! 당신(라이어)은 ${targetPercentage}%의 표를 받아 검거되었습니다. (실제 제시어: ${state.liarKeyword})`, 'liar-reveal-msg');
           } else {
             appendFeed(`😈 투표 결과: 라이어 승리! 당신(라이어)은 단 ${targetPercentage}%의 표만 받으며 무사히 숨었습니다.`, 'citizen-reveal-msg');
           }
         } else {
           if (targetPercentage >= 40) {
-            appendFeed(`📢 투표 결과: 시민 승리! 플레이어들이 ${targetPercentage}%의 표로 진짜 라이어였던 새벽수탉(Player 3)을 검거했습니다. (실제 제시어: 달걀말이)`, 'citizen-reveal-msg');
+            appendFeed(`📢 투표 결과: 시민 승리! 플레이어들이 ${targetPercentage}%의 표로 진짜 라이어였던 새벽수탉(Player 3)을 검거했습니다. (실제 제시어: ${state.liarKeyword})`, 'citizen-reveal-msg');
           } else {
             appendFeed(`😈 투표 결과: 라이어 승리! 진짜 라이어는 새벽수탉(Player 3)이었으나, 시민들이 엉뚱한 플레이어에게 투표했습니다.`, 'liar-reveal-msg');
           }
@@ -933,6 +1097,16 @@ document.addEventListener('DOMContentLoaded', () => {
           appendFeed(`😈 AI 승리! 플레이어들이 진짜 AI를 찾아내지 못했습니다. 기계가 튜링 테스트를 통과했습니다.`, 'liar-reveal-msg');
         }
       }
+
+      // 투표 모드(라이어/AI 찾기)에서도 최종 결과 발표 스크린으로 자동 전환 처리 추가
+      setTimeout(() => {
+        addSystemMsg('🏆 3초 뒤 최종 등수 결과 화면으로 이동합니다...');
+        setTimeout(() => {
+          renderGameResults();
+          switchScreen('screen-result');
+        }, 3000);
+      }, 2000);
+
     }, 500);
   }
 
@@ -943,6 +1117,35 @@ document.addEventListener('DOMContentLoaded', () => {
       if (confirm('대기실로 나가시겠습니까? 현재 진행 상황이 초기화됩니다.')) {
         switchScreen('screen-waiting');
       }
+    });
+  }
+
+  // Screen 5: Result Screen - Go Home Button Handler
+  const btnResultGoHome = document.getElementById('btn-result-go-home');
+  if (btnResultGoHome) {
+    btnResultGoHome.addEventListener('click', () => {
+      // 로비로 복귀 시 채팅창 초기화
+      if (chatLogContainer) chatLogContainer.innerHTML = '';
+
+      // 모든 플레이어 점수 초기값으로 리셋
+      state.players.forEach(p => {
+        if (p.isMe) {
+          state.myScore = 350; // 원본 스코어 350으로 복구
+          p.score = 350;
+        } else {
+          // 봇 스코어들은 적당한 범위로 무작위 리셋
+          p.score = Math.floor(Math.random() * 200) + 150;
+        }
+        p.status = '준비완료';
+      });
+      state.currentRound = 1;
+      
+      // 대기실 화면으로 복귀
+      switchScreen('screen-waiting');
+      
+      // 인게임 UI 동기화
+      syncInGamePlayers();
+      addSystemMsg('대기실로 돌아왔습니다. 다음 게임을 준비해 주세요.');
     });
   }
 
