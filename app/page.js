@@ -1350,20 +1350,7 @@ export default function GamePage() {
             </div>
 
             <div className="topbar-right">
-              <div className="timer-container">
-                <svg className="timer-svg" viewBox="0 0 36 36">
-                  <path className="timer-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-                  <path
-                    className="timer-progress"
-                    strokeDasharray={`${(timerSeconds / timerMax) * 100}, 100`}
-                    style={{ stroke: timerSeconds <= 10 ? '#F56565' : 'var(--color-secondary)' }}
-                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                  />
-                </svg>
-                <div className="timer-text" style={{ color: timerSeconds <= 10 ? '#F56565' : 'var(--color-text)' }}>
-                  {timerSeconds}
-                </div>
-              </div>
+              {/* 타이머가 드로잉 박스 내부로 이동됨 */}
             </div>
           </header>
 
@@ -1402,6 +1389,34 @@ export default function GamePage() {
 
                     {/* 중앙: 이미지 표시 영역 */}
                     <div className="ai-gen-image-area" id="ai-image-container">
+                      {/* 제시어 오버레이 카드 */}
+                      <div className="keyword-box canvas-keyword-overlay">
+                        <span className="keyword-label">{isDrawer ? '제시어' : '맞혀보세요!'}</span>
+                        <span className="keyword-text">{isDrawer ? currentKeyword : '❓'}</span>
+                      </div>
+
+                      {/* 타이머 오버레이 */}
+                      <div className="timer-overlay-badge" style={{
+                        position: 'absolute',
+                        top: '15px',
+                        right: '15px',
+                        zIndex: 10,
+                        backgroundColor: timerSeconds <= 10 ? '#F56565' : 'var(--color-secondary)',
+                        color: 'white',
+                        border: '3px solid var(--color-border)',
+                        borderRadius: '12px',
+                        padding: '6px 12px',
+                        fontWeight: 800,
+                        fontFamily: 'var(--font-brand)',
+                        fontSize: '1.2rem',
+                        boxShadow: '0 3px 0 0 var(--color-border)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        pointerEvents: 'none'
+                      }}>
+                        ⏱️ {timerSeconds}초
+                      </div>
 
                       {/* 빈 상태 플레이스홀더 */}
                       {!aiImageSrc && (
@@ -1542,7 +1557,30 @@ export default function GamePage() {
                     {/* 제시어 오버레이 카드 */}
                     <div className="keyword-box canvas-keyword-overlay">
                       <span className="keyword-label">{isDrawer ? '제시어' : '맞혀보세요!'}</span>
-                      <span className="keyword-text">{isDrawer ? currentKeyword : '❓❓❓'}</span>
+                      <span className="keyword-text">{isDrawer ? currentKeyword : '❓'}</span>
+                    </div>
+
+                    {/* 타이머 오버레이 */}
+                    <div className="timer-overlay-badge" style={{
+                      position: 'absolute',
+                      top: '15px',
+                      right: '15px',
+                      zIndex: 10,
+                      backgroundColor: timerSeconds <= 10 ? '#F56565' : 'var(--color-secondary)',
+                      color: 'white',
+                      border: '3px solid var(--color-border)',
+                      borderRadius: '12px',
+                      padding: '6px 12px',
+                      fontWeight: 800,
+                      fontFamily: 'var(--font-brand)',
+                      fontSize: '1.2rem',
+                      boxShadow: '0 3px 0 0 var(--color-border)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      pointerEvents: 'none'
+                    }}>
+                      ⏱️ {timerSeconds}초
                     </div>
                     
                     <canvas

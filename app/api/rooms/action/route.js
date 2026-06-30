@@ -59,9 +59,9 @@ export async function POST(request) {
 
         const { maxRound, keyword } = payload;
         
-        // 무작위로 첫 출제자(drawer) 지정
-        const playersRes = await client.query('SELECT id FROM players WHERE room_code = $1', [normalizedCode]);
-        const drawerId = playersRes.rows[Math.floor(Math.random() * playersRes.rows.length)].id;
+        // 순서대로 첫 출제자(drawer) 지정 (닉네임 기준 1번째 플레이어)
+        const playersRes = await client.query('SELECT id FROM players WHERE room_code = $1 ORDER BY nickname ASC', [normalizedCode]);
+        const drawerId = playersRes.rows[0].id;
 
         await client.query('BEGIN');
         
@@ -110,17 +110,7 @@ export async function POST(request) {
           [addScore || 100, playerId, normalizedCode]
         );
 
-        // 정답을 맞춘 플레이어가 있으면, 출제자(drawer)에게도 보너스 점수 가산 (+50점)
-        const roomRes = await client.query('SELECT current_drawer_id FROM game_rooms WHERE room_code = $1', [normalizedCode]);
-        if (roomRes.rows.length > 0) {
-          const drawerId = roomRes.rows[0].current_drawer_id;
-          if (drawerId && drawerId !== playerId) {
-            await client.query(
-              'UPDATE players SET score = score + 50 WHERE id = $1 AND room_code = $2',
-              [drawerId, normalizedCode]
-            );
-          }
-        }
+        // 출제자 보너스 포인트 가산 제거됨 (그리는 사람에게 포인트 주지 않음)
 
         await client.query('COMMIT');
         break;
@@ -150,25 +140,32 @@ export async function POST(request) {
           const meRes = await client.query('SELECT status FROM players WHERE id = $1', [playerId]);
           if (meRes.rows.length > 0 && meRes.rows[0].status !== 'correct') {
             await client.query('BEGIN');
+
+            // 현재까지 정답을 맞춘 플레이어 수 조회 (차등 득점 계산용)
+            const countRes = await client.query(
+              "SELECT COUNT(*) as count FROM players WHERE room_code = $1 AND status = 'correct'",
+              [normalizedCode]
+            );
+            const correctCount = parseInt(countRes.rows[0].count, 10);
+
+            let addScore = 100;
+            if (correctCount === 1) addScore = 80;
+            else if (correctCount === 2) addScore = 60;
+            else if (correctCount === 3) addScore = 40;
+            else if (correctCount >= 4) addScore = 20;
             
             // 본인 점수 가산 및 정답 상태 업데이트
             await client.query(
-              "UPDATE players SET score = score + 100, status = 'correct' WHERE id = $1",
-              [playerId]
+              "UPDATE players SET score = score + $1, status = 'correct' WHERE id = $2",
+              [addScore, playerId]
             );
             
-            // 출제자에게도 보너스 점수 가산 (+50점)
-            if (current_drawer_id && current_drawer_id !== playerId) {
-              await client.query(
-                'UPDATE players SET score = score + 50 WHERE id = $1',
-                [current_drawer_id]
-              );
-            }
+            // 출제자 보너스 포인트 가산 제거됨 (그리는 사람에게 포인트 주지 않음)
 
             // 챗 로그에도 정답 알림 기록 추가 (다른 유저 피드 동기화용)
             await client.query(
               "INSERT INTO chat_messages (room_code, player_id, nickname, message, type) VALUES ($1, $2, $3, $4, 'system-msg')",
-              [normalizedCode, playerId, player.nickname, `🎉 ${player.nickname}님이 정답을 맞혔습니다! (+100 pts)`]
+              [normalizedCode, playerId, player.nickname, `🎉 ${player.nickname}님이 정답을 맞혔습니다! (+${addScore} pts)`]
             );
             
             await client.query('COMMIT');
@@ -259,6 +256,12 @@ export async function POST(request) {
         // 플레이어들의 점수 및 상태 초기화
         await client.query(
           "UPDATE players SET score = 0, status = 'ready' WHERE room_code = $1",
+          [normalizedCode]
+        );
+
+        // 비활성 유저 완전 퇴장 정리
+        await client.query(
+          "DELETE FROM players WHERE room_code = $1 AND is_active = FALSE",
           [normalizedCode]
         );
 

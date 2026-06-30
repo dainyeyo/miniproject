@@ -57,7 +57,8 @@ async function runMigration() {
         score INT DEFAULT 0,
         is_host BOOLEAN DEFAULT FALSE,
         status VARCHAR(20) DEFAULT 'ready',
-        last_active TIMESTAMP DEFAULT NOW()
+        last_active TIMESTAMP DEFAULT NOW(),
+        is_active BOOLEAN DEFAULT TRUE
       );
     `);
 
