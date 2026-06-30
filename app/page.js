@@ -94,6 +94,12 @@ export default function GamePage() {
   ];
   const [invitedBotIndex, setInvitedBotIndex] = useState(0);
 
+  // 초대 코드 관련 상태
+  const [roomCode, setRoomCode] = useState('');
+  const [isHost, setIsHost] = useState(false);
+  const [joinCodeInput, setJoinCodeInput] = useState('');
+  const [joinCodeError, setJoinCodeError] = useState('');
+
   // ==========================================
   // 3. 헬퍼 및 유틸리티 함수 (SRP 원칙)
   // ==========================================
@@ -129,6 +135,23 @@ export default function GamePage() {
     if (!ctx) return;
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+  };
+
+  // 초대 코드 생성 (EGGG-XXXX 형식, 혼동 가능한 문자 제외)
+  const generateRoomCode = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const code = Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+    return `EGGG-${code}`;
+  };
+
+  // 초대 코드 클립보드 복사
+  const copyRoomCode = async () => {
+    try {
+      await navigator.clipboard.writeText(roomCode);
+      alert(`초대 코드 [${roomCode}] 가 복사되었습니다! 친구에게 공유하세요.`);
+    } catch {
+      prompt('아래 코드를 직접 복사하세요:', roomCode);
+    }
   };
 
   // ==========================================
@@ -516,6 +539,41 @@ export default function GamePage() {
   };
 
   // ==========================================
+  // 6.5. 방 생성 / 초대 코드 참여 핸들러
+  // ==========================================
+
+  // 방 만들기: 랜덤 코드 생성 후 대기실 입장 (방장)
+  const handleCreateRoom = () => {
+    if (!nickname.trim()) return;
+    const code = generateRoomCode();
+    setRoomCode(code);
+    setIsHost(true);
+    setChatLog([{ type: 'system-msg', text: `🎮 방이 생성되었습니다! 초대 코드: [${code}]` }]);
+    setCurrentScreen('screen-waiting');
+  };
+
+  // 초대 코드 입력 화면으로 이동
+  const handleJoinRoom = () => {
+    setJoinCodeInput('');
+    setJoinCodeError('');
+    setCurrentScreen('screen-join');
+  };
+
+  // 초대 코드 제출: 형식 검증 후 대기실 입장 (게스트)
+  const handleJoinSubmit = (e) => {
+    e.preventDefault();
+    const code = joinCodeInput.trim().toUpperCase();
+    if (!/^EGGG-[A-Z0-9]{4}$/.test(code)) {
+      setJoinCodeError('올바른 초대 코드 형식이 아닙니다. (예: EGGG-A4X9)');
+      return;
+    }
+    setRoomCode(code);
+    setIsHost(false);
+    setChatLog([{ type: 'system-msg', text: `🔑 초대 코드 [${code}] 로 방에 입장했습니다!` }]);
+    setCurrentScreen('screen-waiting');
+  };
+
+  // ==========================================
   // 7. 봇 상호작용 및 정답 타이밍 시뮬레이션
   // ==========================================
   const triggerBotGameplay = (keyword) => {
@@ -669,7 +727,7 @@ export default function GamePage() {
               <p className="brand-tagline">AI와 함께하는 드로잉 퀴즈 게임</p>
             </header>
 
-            <form className="lobby-form" onSubmit={(e) => { e.preventDefault(); setCurrentScreen('screen-waiting'); }}>
+            <div className="lobby-form">
               <div className="input-group">
                 <label className="input-label" htmlFor="player-nickname">사용할 닉네임</label>
                 <input
@@ -678,12 +736,85 @@ export default function GamePage() {
                   value={nickname}
                   onChange={(e) => setNickname(e.target.value)}
                   maxLength={10}
-                  required
                 />
               </div>
-              <button type="submit" className="btn-primary btn-bounce">
-                대기실 입장하기 (Lobby)
-              </button>
+              <div className="lobby-btn-group">
+                <button
+                  id="btn-create-room"
+                  type="button"
+                  className="btn-primary btn-bounce"
+                  onClick={handleCreateRoom}
+                  disabled={!nickname.trim()}
+                >
+                  🎮 방 만들기
+                </button>
+                <button
+                  id="btn-join-room"
+                  type="button"
+                  className="btn-secondary btn-bounce"
+                  onClick={handleJoinRoom}
+                  disabled={!nickname.trim()}
+                >
+                  🔑 초대 코드로 입장
+                </button>
+              </div>
+            </div>
+          </div>
+        </main>
+      )}
+
+      {/* ========================================== */}
+      {/* 1.5. JOIN ROOM SCREEN (INVITE CODE ENTRY) */}
+      {/* ========================================== */}
+      {currentScreen === 'screen-join' && (
+        <main id="screen-join" className="screen-view active-view">
+          <div className="lobby-card">
+            <header className="brand-header">
+              <div className="logo-wrapper">
+                <span className="brand-logo" style={{ fontSize: '4.5rem', display: 'block', lineHeight: '120px' }}>🔑</span>
+              </div>
+              <h1 className="brand-title">방 입장</h1>
+              <p className="brand-tagline">친구에게 받은 초대 코드를 입력하세요</p>
+            </header>
+
+            <form className="lobby-form" onSubmit={handleJoinSubmit}>
+              <div className="input-group">
+                <label className="input-label" htmlFor="join-code-input">초대 코드</label>
+                <input
+                  type="text"
+                  id="join-code-input"
+                  value={joinCodeInput}
+                  onChange={(e) => {
+                    setJoinCodeInput(e.target.value.toUpperCase());
+                    setJoinCodeError('');
+                  }}
+                  placeholder="예: EGGG-A4X9"
+                  maxLength={9}
+                  autoFocus
+                />
+                {joinCodeError && (
+                  <p style={{ color: '#E53E3E', fontSize: '0.82rem', margin: '4px 0 0 0', fontWeight: 700 }}>
+                    ⚠️ {joinCodeError}
+                  </p>
+                )}
+              </div>
+              <div className="lobby-btn-group">
+                <button
+                  id="btn-join-submit"
+                  type="submit"
+                  className="btn-primary btn-bounce"
+                  disabled={!joinCodeInput.trim()}
+                >
+                  ✅ 입장하기
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setCurrentScreen('screen-landing')}
+                >
+                  ◀ 뒤로
+                </button>
+              </div>
             </form>
           </div>
         </main>
@@ -698,8 +829,15 @@ export default function GamePage() {
             
             <header className="waiting-room-header">
               <h2 className="lobby-logo-mini">🥚 EGGG 대기실</h2>
-              <div className="room-invite-code">
-                초대 코드: <span style={{ color: 'var(--color-secondary)' }}>EGGG-9988</span>
+              <div className="room-invite-code" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                초대 코드: <span style={{ color: 'var(--color-secondary)', fontFamily: 'var(--font-brand)', letterSpacing: '0.1em' }}>{roomCode}</span>
+                <button
+                  onClick={copyRoomCode}
+                  className="copy-code-btn"
+                  title="초대 코드 복사"
+                >
+                  📋
+                </button>
               </div>
             </header>
 

@@ -278,6 +278,27 @@ button {
   font-size: 1.2rem;
 }
 
+/* 방 만들기 / 들어가기 다중 버튼 그룹 */
+.lobby-btn-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.lobby-btn-group button {
+  width: 100%;
+  padding: 16px;
+  font-size: 1.1rem;
+  gap: 8px;
+}
+
+.lobby-btn-group button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: var(--shadow-flat) !important;
+}
+
 .btn-icon {
   margin-right: 6px;
   font-size: 1.2rem;
@@ -293,6 +314,60 @@ button {
 /* ==========================================================================
    2. ROOM SETUP & WAITING ROOM SCREEN
    ========================================================================== */
+
+/* Join Room Screen */
+#screen-join {
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+  background: radial-gradient(circle, #EBF8FF 0%, #FAF9F6 100%);
+  overflow-y: auto;
+}
+
+/* 초대 코드 입력 */
+#join-code-input {
+  width: 100%;
+  padding: 16px 20px;
+  font-size: 1.5rem;
+  font-weight: 700;
+  border: 3px solid var(--color-border);
+  border-radius: 16px;
+  outline: none;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  transition: all 0.2s ease;
+  text-align: center;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  font-family: var(--font-brand);
+}
+
+#join-code-input:focus {
+  border-color: var(--color-info);
+  background-color: #FFF;
+  box-shadow: 0 0 0 4px rgba(66, 153, 225, 0.15);
+}
+
+/* 코드 복사 버튼 */
+.copy-code-btn {
+  background: none !important;
+  border: 1.5px solid transparent !important;
+  box-shadow: none !important;
+  padding: 2px 6px !important;
+  border-radius: 6px !important;
+  font-size: 1rem;
+  line-height: 1;
+  transition: all 0.15s ease;
+  min-width: unset;
+}
+
+.copy-code-btn:hover {
+  background: rgba(0,0,0,0.06) !important;
+  border-color: var(--color-border) !important;
+  transform: scale(1.2) !important;
+  box-shadow: none !important;
+}
+
 #screen-waiting {
   justify-content: center;
   align-items: center;
