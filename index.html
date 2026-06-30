@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EGGG - AI Drawing Quiz Game</title>
+  <!-- Google Fonts: Fredoka (둥글둥글한 캐주얼 폰트) & Nunito (가독성 높은 폰트) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <!-- CSS Stylesheet -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div id="app-container" class="app-container">
+
+    <!-- ========================================== -->
+    <!-- 1. LANDING SCREEN (NICKNAME ENTRY)         -->
+    <!-- ========================================== -->
+    <main id="screen-landing" class="screen-view active-view">
+      <div class="lobby-card">
+        <div class="brand-header">
+          <div class="logo-wrapper">
+            <img src="assets/logo.png" alt="EGGG Cute Logo" class="brand-logo" id="brand-logo-img">
+          </div>
+          <h1 class="brand-title">EGGG</h1>
+          <p class="brand-tagline">AI가 굽고 내가 맞히는 말랑말랑 드로잉 퀴즈!</p>
+        </div>
+
+        <div class="lobby-form">
+          <div class="input-group">
+            <label for="player-nickname" class="input-label">닉네임 입력</label>
+            <input type="text" id="player-nickname" placeholder="귀여운 닉네임을 적어주세요!" maxlength="12" value="꼬마달걀">
+          </div>
+
+          <div class="lobby-actions-single">
+            <button id="btn-enter-lobby" class="btn-primary btn-bounce">
+              <span class="btn-icon">🚪</span> 대기실 입장 (Enter)
+            </button>
+          </div>
+        </div>
+
+        <div class="lobby-footer">
+          <span class="active-players-count">🟢 현재 1,240명의 달걀들이 대기실을 찾고 있어요!</span>
+        </div>
+      </div>
+    </main>
+
+
+    <!-- ========================================== -->
+    <!-- 2. ROOM SETUP & WAITING ROOM SCREEN        -->
+    <!-- ========================================== -->
+    <main id="screen-waiting" class="screen-view">
+      <div class="waiting-room-container">
+        
+        <!-- Header -->
+        <header class="waiting-room-header">
+          <div class="lobby-logo-mini">🥚 EGGG LOBBY</div>
+          <div class="room-invite-code">방 코드: <strong id="room-code-display">EGGG-77</strong></div>
+        </header>
+
+        <!-- Body Layout (Left: Players, Right: Mode Select Grid) -->
+        <div class="waiting-room-body">
+          
+          <!-- Left: Player Slots List (Max 14 slots for Gartic vibe) -->
+          <section class="waiting-players-section">
+            <div class="section-title">
+              <span>플레이어 <strong id="lobby-player-count">1</strong>/14</span>
+            </div>
+            
+            <div class="player-slots-list" id="lobby-slots-container">
+              <!-- Slot 1 (Me - Room Owner) -->
+              <div class="lobby-player-slot is-owner is-me">
+                <div class="slot-avatar">🥚</div>
+                <div class="slot-name-wrapper">
+                  <span class="slot-name" id="my-lobby-name">꼬마달걀 (나)</span>
+                  <span class="slot-badge">방장</span>
+                </div>
+              </div>
+              
+              <!-- Blank Slots placeholder (Gartic Phone style slots) -->
+              <div class="lobby-player-slot is-empty">
+                <div class="slot-avatar">❓</div>
+                <div class="slot-name-wrapper">
+                  <span class="slot-name">비어 있음</span>
+                </div>
+              </div>
+              
+              <div class="lobby-player-slot is-empty">
+                <div class="slot-avatar">❓</div>
+                <div class="slot-name-wrapper">
+                  <span class="slot-name">비어 있음</span>
+                </div>
+              </div>
+
+              <div class="lobby-player-slot is-empty">
+                <div class="slot-avatar">❓</div>
+                <div class="slot-name-wrapper">
+                  <span class="slot-name">비어 있음</span>
+                </div>
+              </div>
+
+              <div class="lobby-player-slot is-empty">
+                <div class="slot-avatar">❓</div>
+                <div class="slot-name-wrapper">
+                  <span class="slot-name">비어 있음</span>
+                </div>
+              </div>
+
+              <div class="lobby-player-slot is-empty">
+                <div class="slot-avatar">❓</div>
+                <div class="slot-name-wrapper">
+                  <span class="slot-name">비어 있음</span>
+                </div>
+              </div>
+
+              <div class="lobby-player-slot is-empty">
+                <div class="slot-avatar">❓</div>
+                <div class="slot-name-wrapper">
+                  <span class="slot-name">비어 있음</span>
+                </div>
+              </div>
+
+              <div class="lobby-player-slot is-empty">
+                <div class="slot-avatar">❓</div>
+                <div class="slot-name-wrapper">
+                  <span class="slot-name">비어 있음</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Right: Mode Select Grid Panel -->
+          <section class="waiting-modes-section">
+            
+            <!-- Setup Tabs (Preset vs Custom) -->
+            <div class="setup-tabs">
+              <button class="tab-btn active" id="tab-preset">사전 설정</button>
+              <button class="tab-btn" id="tab-custom">커스텀 설정</button>
+            </div>
+
+            <!-- Mode Selector Cards Grid (3x3 or expanded layout) -->
+            <div class="mode-cards-grid">
+              
+              <!-- Mode 1: 일반 드로잉 (Human Mode) -->
+              <div class="mode-select-card active-card" data-mode-key="human">
+                <div class="mode-card-icon">✏️</div>
+                <div class="mode-card-info">
+                  <h4 class="mode-card-title">일반</h4>
+                  <p class="mode-card-desc">제대로 집중하세요! 사람이 제시어를 보고 캔버스에 직접 그림을 그립니다.</p>
+                </div>
+                <span class="mode-active-indicator">✓</span>
+              </div>
+
+              <!-- Mode 2: AI 드로잉 (AI Mode) -->
+              <div class="mode-select-card" data-mode-key="ai">
+                <div class="mode-card-icon">🤖</div>
+                <div class="mode-card-info">
+                  <h4 class="mode-card-title">AI 드로잉</h4>
+                  <p class="mode-card-desc">AI가 굽는 중! AI가 제시어를 재해석해 엉뚱하고 귀여운 그림을 그립니다.</p>
+                </div>
+                <span class="mode-active-indicator">✓</span>
+              </div>
+
+              <!-- Mode 3: 라이어 게임 (Liar Mode - Traditional Rules) -->
+              <div class="mode-select-card" data-mode-key="liar">
+                <div class="mode-card-icon">🕵️‍♂️</div>
+                <div class="mode-card-info">
+                  <h4 class="mode-card-title">라이어 게임</h4>
+                  <p class="mode-card-desc">제시어 눈치 싸움! 한 명만 다른 제시어를 받습니다. 그림을 보고 다른 주제를 받은 라이어를 검거하세요.</p>
+                </div>
+                <span class="mode-active-indicator">✓</span>
+              </div>
+
+              <!-- Mode 4: AI 찾기 (Find AI Mode - NEW) -->
+              <div class="mode-select-card" data-mode-key="find-ai">
+                <div class="mode-card-icon">🤖🔍</div>
+                <div class="mode-card-info">
+                  <h4 class="mode-card-title">AI 찾기</h4>
+                  <p class="mode-card-desc">기계 튜링 테스트! 플레이어들의 손그림 사이에 숨어있는 진짜 AI의 그림을 찾아 투표하세요.</p>
+                </div>
+                <span class="mode-active-indicator">✓</span>
+              </div>
+
+              <!-- Mode 5: 아이스브레이커 (Icebreaker) -->
+              <div class="mode-select-card" data-mode-key="icebreaker">
+                <div class="mode-card-icon">🧊</div>
+                <div class="mode-card-info">
+                  <h4 class="mode-card-title">아이스브레이커</h4>
+                  <p class="mode-card-desc">첫인상 퀴즈! 첫 대면한 유저들과 가볍고 코믹한 질문에 맞춰 낙서하며 친해집니다.</p>
+                </div>
+                <span class="mode-active-indicator">✓</span>
+              </div>
+
+              <!-- Mode 6: 스피드런 (Speedrun) -->
+              <div class="mode-select-card" data-mode-key="speedrun">
+                <div class="mode-card-icon">⏱️</div>
+                <div class="mode-card-info">
+                  <h4 class="mode-card-title">스피드런</h4>
+                  <p class="mode-card-desc">단 15초! 시간이 지날수록 시계가 빨라지며, 극도의 순발력으로 제시어를 표현합니다.</p>
+                </div>
+                <span class="mode-active-indicator">✓</span>
+              </div>
+
+              <!-- Mode 7: 샌드위치 (Sandwich) -->
+              <div class="mode-select-card" data-mode-key="sandwich">
+                <div class="mode-card-icon">🥪</div>
+                <div class="mode-card-info">
+                  <h4 class="mode-card-title">샌드위치</h4>
+                  <p class="mode-card-desc">겹쳐 그리기! 앞 유저가 그린 그림의 불투명한 실루엣을 보고 이어 그립니다.</p>
+                </div>
+                <span class="mode-active-indicator">✓</span>
+              </div>
+
+            </div>
+
+            <!-- Custom Setup Settings (shown if tab custom is active - mock container) -->
+            <div class="custom-settings-panel" style="display: none;">
+              <div class="custom-option">
+                <label>라운드 수</label>
+                <select><option>3 라운드</option><option selected>5 라운드</option><option>8 라운드</option></select>
+              </div>
+              <div class="custom-option">
+                <label>그리기 시간 제한</label>
+                <select><option>30 초</option><option selected>45 초</option><option>60 초</option></select>
+              </div>
+              <div class="custom-option">
+                <label>AI 창의력 강도</label>
+                <select><option>보통 (Soft)</option><option selected>매우 창의적 (Wild)</option></select>
+              </div>
+            </div>
+
+          </section>
+
+        </div>
+
+        <!-- Footer Control Buttons -->
+        <footer class="waiting-room-footer">
+          <button id="btn-back-to-landing" class="btn-secondary">
+            ◀ 뒤로 (Lobby)
+          </button>
+          
+          <div class="footer-actions-right">
+            <button id="btn-lobby-invite" class="btn-secondary btn-bounce">
+              <span class="btn-icon">➕</span> 초대하기 (봇 추가)
+            </button>
+            <button id="btn-lobby-start" class="btn-primary btn-bounce">
+              <span class="btn-icon">▶</span> 게임 시작 (Start)
+            </button>
+          </div>
+        </footer>
+
+      </div>
+    </main>
+
+
+    <!-- ========================================== -->
+    <!-- 3. GAME ROOM (MAIN GAMEPLAY SCREEN)        -->
+    <!-- ========================================== -->
+    <main id="screen-game" class="screen-view">
+      
+      <!-- Top Header Bar -->
+      <header class="game-topbar">
+        <div class="topbar-left">
+          <div class="logo-mini" id="goto-lobby-shortcut">
+            <span class="logo-egg-icon">🥚</span>
+            <span class="logo-text">EGGG</span>
+          </div>
+          <div class="game-mode-tag">
+            <span class="mode-badge" id="current-mode-badge">일반 모드</span>
+            <span class="round-indicator" id="round-info">Round 2 / 5</span>
+          </div>
+        </div>
+
+        <div class="topbar-center">
+          <div class="keyword-box">
+            <span class="keyword-label">제시어</span>
+            <span class="keyword-text" id="game-keyword-display">계란 후라이 (Fried Egg)</span>
+          </div>
+        </div>
+
+        <div class="topbar-right">
+          <!-- Countdown Timer Circle -->
+          <div class="timer-container">
+            <svg class="timer-svg" viewBox="0 0 36 36">
+              <path class="timer-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+              <path class="timer-progress" id="timer-progress" stroke-dasharray="100, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+            </svg>
+            <div class="timer-text" id="timer-countdown">45</div>
+          </div>
+        </div>
+      </header>
+
+      <!-- Main Game Grid (Three Column Layout) -->
+      <div class="game-layout">
+        
+        <!-- Left Sidebar: Player List -->
+        <aside class="game-sidebar-left">
+          <div class="sidebar-header">
+            <h3>참가자 (<span id="player-count">1</span>)</h3>
+          </div>
+          <div class="player-list" id="player-list-container">
+            <!-- Player Card 1 (Me) -->
+            <div class="player-card is-me status-drawing">
+              <div class="player-avatar">🥚</div>
+              <div class="player-info">
+                <span class="player-name">꼬마달걀 (나)</span>
+                <span class="player-score">350 pts</span>
+              </div>
+              <div class="player-status-badge">그리는 중</div>
+            </div>
+          </div>
+        </aside>
+
+        <!-- Center Main Area: Canvas or AI Loading -->
+        <section class="game-main-area">
+          
+          <!-- View A: HTML5 Canvas Board (Human Drawing Mode) -->
+          <div id="subview-canvas" class="sub-game-view active-subview">
+            <div class="canvas-wrapper">
+              <canvas id="drawing-canvas" width="700" height="460"></canvas>
+            </div>
+            
+            <!-- Drawing Tool Bar -->
+            <div class="drawing-tools">
+              <div class="tool-group colors">
+                <button class="color-dot active" style="background-color: #2D3748;" data-color="#2D3748"></button>
+                <button class="color-dot" style="background-color: #E53E3E;" data-color="#E53E3E"></button>
+                <button class="color-dot" style="background-color: #DD6B20;" data-color="#DD6B20"></button>
+                <button class="color-dot" style="background-color: #FFD23F;" data-color="#FFD23F"></button>
+                <button class="color-dot" style="background-color: #38A169;" data-color="#38A169"></button>
+                <button class="color-dot" style="background-color: #3182CE;" data-color="#3182CE"></button>
+                <button class="color-dot" style="background-color: #805AD5;" data-color="#805AD5"></button>
+                <button class="color-dot" style="background-color: #FF85A2;" data-color="#FF85A2"></button>
+              </div>
+              <div class="tool-group brush-sizes">
+                <button class="size-dot size-small" data-size="4" title="얇게"></button>
+                <button class="size-dot size-medium active" data-size="8" title="보통"></button>
+                <button class="size-dot size-large" data-size="16" title="두껍게"></button>
+              </div>
+              <div class="tool-group action-tools">
+                <button id="tool-pencil" class="tool-btn active" title="연필">✏️</button>
+                <button id="tool-eraser" class="tool-btn" title="지우개">🧽</button>
+                <button id="tool-clear" class="tool-btn danger" title="모두 지우기">🗑️</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- View B: AI Drawing & Loading Area (AI Drawing Mode) -->
+          <div id="subview-ai" class="sub-game-view">
+            <div class="ai-loading-container">
+              
+              <!-- Frying Pan CSS Animation Placeholder -->
+              <div class="frying-pan-loader">
+                <div class="pan-handle"></div>
+                <div class="pan-bowl">
+                  <div class="egg-white"></div>
+                  <div class="egg-yolk"></div>
+                </div>
+                <div class="pan-shadow"></div>
+              </div>
+
+              <div class="ai-status-text">
+                <h3 class="loading-pulse-text">AI가 열심히 계란을 굽는 중...🍳</h3>
+                <p>잠시만 기다려주시면 AI가 그린 엉뚱한 그림이 짜잔! 등장합니다.</p>
+              </div>
+
+              <!-- AI Generated Image Display Placeholder (hidden during loading) -->
+              <div class="ai-result-display" style="display: none;" id="ai-result-display">
+                <img src="assets/crayon_egg.png" alt="AI Generated Drawing" class="ai-generated-img">
+                <div class="ai-img-tag">🤖 AI가 그려낸 [계란 후라이]</div>
+              </div>
+            </div>
+          </div>
+
+        </section>
+
+        <!-- Right Sidebar: Live Chat & Log -->
+        <aside class="game-sidebar-right">
+          <div class="sidebar-header">
+            <h3>실시간 피드 & 정답</h3>
+          </div>
+          <div class="chat-log-container" id="chat-log-container">
+            <div class="feed-item system-msg">
+              <span class="feed-icon">📢</span> 시스템: 게임방에 접속했습니다!
+            </div>
+          </div>
+          
+          <!-- Bottom Chat Input Bar -->
+          <form class="chat-input-bar" id="chat-form">
+            <input type="text" id="chat-input" placeholder="정답을 입력하거나 대화해 보세요!" autocomplete="off" maxlength="50">
+            <button type="submit" id="chat-submit-btn">전송</button>
+          </form>
+        </aside>
+
+      </div>
+    </main>
+
+
+    <!-- ========================================== -->
+    <!-- 4. GAME MODES & VOTING SCREEN              -->
+    <!-- ========================================== -->
+    <main id="screen-voting" class="screen-view">
+      <div class="voting-container">
+        
+        <header class="voting-header">
+          <div class="voting-badge" id="vote-screen-badge">LIAR GAME MODE</div>
+          <h2 id="vote-screen-title">누가 진짜 AI가 그린 그림일까요? 👀</h2>
+          <p id="vote-screen-desc">플레이어 중 한 명은 AI입니다! AI가 그려낸 가짜 그림을 찾아 투표하세요.</p>
+          
+          <!-- Global Vote Info / Timer -->
+          <div class="voting-meta">
+            <div class="vote-timer">남은 투표 시간: <strong id="vote-timer-sec">20</strong>초</div>
+            <div class="vote-status-bar">
+              <div class="vote-bar-fill" style="width: 100%;"></div>
+            </div>
+          </div>
+        </header>
+
+        <!-- Image Cards Grid Layout (4 to 6 AI-generated/User images) -->
+        <div class="voting-grid">
+          
+          <!-- Card 1 -->
+          <div class="vote-card" data-player-id="1">
+            <div class="vote-card-badge" id="vote-badge-p1">그림 A</div>
+            <div class="vote-image-wrapper">
+              <img src="assets/crayon_egg.png" alt="Scribble 1">
+            </div>
+            <div class="vote-card-footer">
+              <div class="author-label" id="vote-author-p1">Player 1 (익명)</div>
+              <button class="btn-vote" data-target-name="Player 1">투표하기 (Vote)</button>
+              <div class="vote-progress-wrapper" style="display: none;">
+                <div class="vote-fill" style="width: 0%;"></div>
+                <span class="vote-count-text">0표 (0%)</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 2 -->
+          <div class="vote-card" data-player-id="2">
+            <div class="vote-card-badge" id="vote-badge-p2">그림 B</div>
+            <div class="vote-image-wrapper">
+              <img src="assets/guitar_egg.png" alt="Scribble 2">
+            </div>
+            <div class="vote-card-footer">
+              <div class="author-label" id="vote-author-p2">Player 2 (익명)</div>
+              <button class="btn-vote" data-target-name="Player 2">투표하기 (Vote)</button>
+              <div class="vote-progress-wrapper" style="display: none;">
+                <div class="vote-fill" style="width: 0%;"></div>
+                <span class="vote-count-text">0표 (0%)</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 3 -->
+          <div class="vote-card" data-player-id="3">
+            <div class="vote-card-badge" id="vote-badge-p3">그림 C</div>
+            <div class="vote-image-wrapper">
+              <img src="assets/crayon_egg.png" alt="Scribble 3" style="filter: hue-rotate(90deg);">
+            </div>
+            <div class="vote-card-footer">
+              <div class="author-label" id="vote-author-p3">Player 3 (익명)</div>
+              <button class="btn-vote" data-target-name="Player 3">투표하기 (Vote)</button>
+              <div class="vote-progress-wrapper" style="display: none;">
+                <div class="vote-fill" style="width: 0%;"></div>
+                <span class="vote-count-text">0표 (0%)</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 4 -->
+          <div class="vote-card" data-player-id="4">
+            <div class="vote-card-badge" id="vote-badge-p4">그림 D</div>
+            <div class="vote-image-wrapper">
+              <img src="assets/guitar_egg.png" alt="Scribble 4" style="filter: sepia(0.8) hue-rotate(180deg);">
+            </div>
+            <div class="vote-card-footer">
+              <div class="author-label" id="vote-author-p4">Player 4 (익명)</div>
+              <button class="btn-vote" data-target-name="Player 4">투표하기 (Vote)</button>
+              <div class="vote-progress-wrapper" style="display: none;">
+                <div class="vote-fill" style="width: 0%;"></div>
+                <span class="vote-count-text">0표 (0%)</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 5 -->
+          <div class="vote-card" data-player-id="5">
+            <div class="vote-card-badge" id="vote-badge-p5">그림 E</div>
+            <div class="vote-image-wrapper">
+              <img src="assets/crayon_egg.png" alt="Scribble 5" style="filter: hue-rotate(240deg);">
+            </div>
+            <div class="vote-card-footer">
+              <div class="author-label" id="vote-author-p5">Player 5 (익명)</div>
+              <button class="btn-vote" data-target-name="Player 5">투표하기 (Vote)</button>
+              <div class="vote-progress-wrapper" style="display: none;">
+                <div class="vote-fill" style="width: 0%;"></div>
+                <span class="vote-count-text">0표 (0%)</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 6 (AI or Special Target) -->
+          <div class="vote-card special-liar" data-player-id="6">
+            <div class="vote-card-badge liar-badge" id="vote-badge-p6">그림 F</div>
+            <div class="vote-image-wrapper">
+              <img src="assets/guitar_egg.png" alt="Scribble 6" style="filter: saturate(1.5) hue-rotate(300deg);">
+            </div>
+            <div class="vote-card-footer">
+              <div class="author-label" id="vote-author-p6">Player 6 (익명)</div>
+              <button class="btn-vote" data-target-name="Player 6">투표하기 (Vote)</button>
+              <div class="vote-progress-wrapper" style="display: none;">
+                <div class="vote-fill" style="width: 0%;"></div>
+                <span class="vote-count-text">0표 (0%)</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="voting-actions">
+          <button id="btn-submit-votes" class="btn-primary">투표 완료 및 결과 보기</button>
+          <button id="btn-reset-votes" class="btn-secondary" style="display: none;">투표 초기화</button>
+        </div>
+
+      </div>
+    </main>
+
+  </div>
+
+  <!-- Scripts -->
+  <script src="app.js"></script>
+</body>
+</html>
