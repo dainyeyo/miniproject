@@ -72,6 +72,7 @@ export default function GamePage() {
   const aiDebounceTimerRef = useRef(null);
   const lastAiPromptRef = useRef('');
   const lastChatMsgIdRef = useRef(0);
+  const localRoundRef = useRef(1);
 
   const canvasRef = useRef(null);
   const isDrawingRef = useRef(false);
@@ -601,7 +602,8 @@ export default function GamePage() {
           setMaxRound(room.max_round);
 
           // 라운드가 변경되었을 때 타이머 및 화면 리셋
-          if (room.current_round !== currentRound) {
+          if (room.current_round !== localRoundRef.current) {
+            localRoundRef.current = room.current_round;
             setCurrentRound(room.current_round);
             setTimerSeconds(45);
             setTimerMax(45);
@@ -691,43 +693,58 @@ export default function GamePage() {
   // 타이머 만료 시 흐름 제어 (방장 서버 연동 / 게스트 대기)
   const handleTimerEnd = async () => {
     if (currentScreen === 'screen-game' && isHost) {
-      if (currentRound < maxRound) {
-        addSystemMsg(`⏳ 라운드 종료! 다음 라운드로 전환합니다.`);
-        cleanupAiGenerator();
-        
-        const [newWord] = getRandomWords(wordPool, 1);
-        
-        try {
-          await fetch('/api/rooms/action', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              roomCode,
-              playerId,
-              action: 'next-round',
-              payload: { nextRound: currentRound + 1, keyword: newWord }
-            })
-          });
-        } catch (err) {
-          console.error('Next round API trigger failed:', err);
-        }
-      } else {
-        addSystemMsg('🏆 모든 라운드가 종료되었습니다! 최종 결과를 발표합니다.');
-        cleanupAiGenerator();
-        try {
-          await fetch('/api/rooms/action', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              roomCode,
-              playerId,
-              action: 'game-over'
-            })
-          });
-        } catch (err) {
-          console.error('Game over API trigger failed:', err);
-        }
+      try {
+        // 1. 먼저 DB에 정답 공개 로그 기록 삽입
+        await fetch('/api/rooms/action', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            roomCode,
+            playerId,
+            action: 'reveal-answer'
+          })
+        });
+      } catch (err) {
+        console.error('Failed to reveal answer:', err);
       }
+
+      // 2. 3.5초 대기 후 다음 라운드 또는 게임 종료 처리 진행 (유저들이 정답을 인지할 시간 확보)
+      setTimeout(async () => {
+        if (currentRound < maxRound) {
+          cleanupAiGenerator();
+          const [newWord] = getRandomWords(wordPool, 1);
+          
+          try {
+            await fetch('/api/rooms/action', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                roomCode,
+                playerId,
+                action: 'next-round',
+                payload: { nextRound: currentRound + 1, keyword: newWord }
+              })
+            });
+          } catch (err) {
+            console.error('Next round API trigger failed:', err);
+          }
+        } else {
+          cleanupAiGenerator();
+          try {
+            await fetch('/api/rooms/action', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                roomCode,
+                playerId,
+                action: 'game-over'
+              })
+            });
+          } catch (err) {
+            console.error('Game over API trigger failed:', err);
+          }
+        }
+      }, 3500);
     }
   };
 
@@ -735,6 +752,9 @@ export default function GamePage() {
   const goHome = async () => {
     cleanupAiGenerator();
     setChatLog([{ type: 'system-msg', text: '대기실로 돌아왔습니다. 다음 게임을 준비해 주세요.' }]);
+    
+    localRoundRef.current = 1;
+    setCurrentRound(1);
     
     if (isHost) {
       try {
@@ -796,6 +816,9 @@ export default function GamePage() {
       setPlayerId(data.playerId);
       setIsHost(true);
       setMyScore(0);
+      localRoundRef.current = 1;
+      setCurrentRound(1);
+      lastChatMsgIdRef.current = 0;
       setChatLog([{ type: 'system-msg', text: `🎮 방이 생성되었습니다! 초대 코드: [${data.roomCode}]` }]);
       setCurrentScreen('screen-waiting');
     } catch (err) {
@@ -832,6 +855,9 @@ export default function GamePage() {
       setPlayerId(data.playerId);
       setIsHost(false);
       setMyScore(0);
+      localRoundRef.current = 1;
+      setCurrentRound(1);
+      lastChatMsgIdRef.current = 0;
       setChatLog([{ type: 'system-msg', text: `🔑 초대 코드 [${data.roomCode}] 로 방에 입장했습니다!` }]);
       
       const dbPlayers = data.players.map(p => ({

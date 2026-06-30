@@ -183,6 +183,24 @@ export async function POST(request) {
         });
       }
 
+      case 'reveal-answer': {
+        if (!player.is_host) {
+          await client.end();
+          return NextResponse.json({ error: '방장만 정답을 공개할 수 있습니다.' }, { status: 403 });
+        }
+
+        const roomRes = await client.query('SELECT current_keyword FROM game_rooms WHERE room_code = $1', [normalizedCode]);
+        const oldKeyword = roomRes.rows[0]?.current_keyword || '';
+
+        if (oldKeyword) {
+          await client.query(
+            "INSERT INTO chat_messages (room_code, player_id, nickname, message, type) VALUES ($1, $2, $3, $4, 'system-msg')",
+            [normalizedCode, 'system', 'System', `📢 이번 라운드 정답은 [${oldKeyword}] 이었습니다!`]
+          );
+        }
+        break;
+      }
+
       case 'next-round': {
         if (!player.is_host) {
           await client.end();
