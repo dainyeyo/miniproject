@@ -15,3 +15,9 @@ model/TEST/venv/
 model/TEST/venv311/
 **/venv/
 **/venv311/
+
+# Python Cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
