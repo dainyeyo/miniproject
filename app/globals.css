@@ -1795,3 +1795,388 @@ button {
   0%, 100% { transform: translateY(0) scale(1); }
   50% { transform: translateY(-10px) scale(1.05); }
 }
+
+
+/* ==========================================================================
+   AI IMAGE GENERATION VIEW (SD-Turbo Integration)
+   ========================================================================== */
+
+/* 전체 레이아웃: 상단 뱃지 + 중앙 이미지 + 하단 컨트롤 */
+.ai-gen-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 0;
+}
+
+/* 서버 상태 뱃지 */
+.ai-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 14px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  border: 2px solid var(--color-border);
+  background-color: var(--color-card-bg);
+  box-shadow: 0 2px 0 0 var(--color-border);
+  align-self: center;
+  transition: all 0.2s ease;
+}
+
+.ai-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-gray-dark);
+  transition: all 0.2s ease;
+}
+
+.ai-status-badge.ai-st-ready .ai-status-dot {
+  background: var(--color-success);
+  box-shadow: 0 0 6px var(--color-success);
+}
+
+.ai-status-badge.ai-st-loading .ai-status-dot {
+  background: var(--color-secondary);
+  animation: ai-pulse-dot 1s infinite;
+}
+
+.ai-status-badge.ai-st-error .ai-status-dot {
+  background: var(--color-danger);
+  box-shadow: 0 0 6px var(--color-danger);
+}
+
+.ai-status-badge.ai-st-generating .ai-status-dot {
+  background: var(--color-purple);
+  animation: ai-pulse-dot 0.8s infinite;
+}
+
+@keyframes ai-pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* 중앙 이미지 영역 */
+.ai-gen-image-area {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-width: 520px;
+  aspect-ratio: 1 / 1;
+  max-height: 420px;
+  background-color: white;
+  border: 4px solid var(--color-border);
+  border-radius: 20px;
+  box-shadow: var(--shadow-flat);
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 빈 상태 플레이스홀더 */
+.ai-gen-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--color-gray-dark);
+  text-align: center;
+  padding: 30px;
+}
+
+.ai-gen-placeholder-icon {
+  font-size: 3rem;
+  opacity: 0.5;
+  filter: grayscale(0.5);
+}
+
+.ai-gen-placeholder p {
+  font-size: 0.88rem;
+  font-weight: 700;
+  line-height: 1.5;
+  max-width: 240px;
+}
+
+/* 생성된 이미지 */
+#ai-generated-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: none;
+  animation: ai-img-fade-in 0.4s ease forwards;
+  background-color: #f8f8f8;
+}
+
+@keyframes ai-img-fade-in {
+  from { opacity: 0; transform: scale(1.02); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* 로딩 오버레이 */
+.ai-gen-loading-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(4px);
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  z-index: 10;
+  border-radius: 16px;
+}
+
+.ai-gen-loading-overlay.visible {
+  display: flex;
+}
+
+.ai-gen-spinner {
+  width: 44px;
+  height: 44px;
+  border: 4px solid var(--color-gray-light);
+  border-top-color: var(--color-secondary);
+  border-radius: 50%;
+  animation: ai-spin 0.9s linear infinite;
+}
+
+@keyframes ai-spin {
+  to { transform: rotate(360deg); }
+}
+
+.ai-gen-loading-text {
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: var(--color-gray-dark);
+  animation: ai-text-pulse 1.5s ease infinite;
+}
+
+@keyframes ai-text-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* 이미지 메타 정보 */
+.ai-gen-image-meta {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 8px 14px;
+  background: linear-gradient(transparent, rgba(0,0,0,0.5));
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: rgba(255,255,255,0.85);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transform: translateY(100%);
+  transition: transform 0.25s ease;
+}
+
+.ai-gen-image-area:hover .ai-gen-image-meta {
+  transform: translateY(0);
+}
+
+/* 에러 메시지 */
+.ai-gen-error-box {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: #FFF5F5;
+  border: 2px solid #FEB2B2;
+  border-radius: 12px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #9B2C2C;
+  width: 100%;
+  max-width: 520px;
+}
+
+.ai-gen-error-box.visible {
+  display: flex;
+}
+
+.ai-gen-error-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+/* 하단 컨트롤 패널 */
+.ai-gen-controls {
+  width: 100%;
+  max-width: 520px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* 프롬프트 입력 + 버튼 행 */
+.ai-gen-prompt-row {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+}
+
+#ai-prompt-input {
+  flex: 1;
+  min-height: 52px;
+  padding: 10px 14px;
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--color-text);
+  background-color: var(--color-bg);
+  border: 3px solid var(--color-border);
+  border-radius: 14px;
+  resize: none;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+#ai-prompt-input::placeholder {
+  color: var(--color-gray-dark);
+  font-weight: 600;
+}
+
+#ai-prompt-input:focus {
+  border-color: var(--color-secondary);
+  box-shadow: 0 0 0 3px rgba(255, 159, 28, 0.15);
+}
+
+.ai-gen-btn {
+  padding: 10px 22px;
+  font-size: 0.95rem;
+  flex-shrink: 0;
+  gap: 6px;
+  box-shadow: 0 3px 0 0 var(--color-border);
+  white-space: nowrap;
+}
+
+.ai-gen-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 옵션 행 */
+.ai-gen-options-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 0 4px;
+}
+
+/* 실시간 토글 */
+.ai-gen-toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--color-gray-dark);
+  user-select: none;
+}
+
+.ai-gen-toggle-label input[type="checkbox"] {
+  display: none;
+}
+
+.ai-gen-toggle-switch {
+  position: relative;
+  width: 34px;
+  height: 18px;
+  background: var(--color-gray-light);
+  border: 2px solid var(--color-border);
+  border-radius: 999px;
+  transition: all 0.2s ease;
+}
+
+.ai-gen-toggle-switch::before {
+  content: '';
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  left: 1px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--color-gray-dark);
+  border-radius: 50%;
+  transition: all 0.2s ease;
+}
+
+.ai-gen-toggle-label input:checked + .ai-gen-toggle-switch {
+  background: var(--color-primary);
+  border-color: var(--color-border);
+}
+
+.ai-gen-toggle-label input:checked + .ai-gen-toggle-switch::before {
+  left: calc(100% - 13px);
+  background: var(--color-text);
+}
+
+/* Steps 슬라이더 */
+.ai-gen-steps-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--color-gray-dark);
+}
+
+.ai-gen-steps-group input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 70px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-gray-light);
+  outline: none;
+  cursor: pointer;
+}
+
+.ai-gen-steps-group input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--color-secondary);
+  border: 2px solid var(--color-border);
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+
+.ai-gen-steps-group input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.ai-gen-steps-value {
+  background: var(--color-primary);
+  border: 2px solid var(--color-border);
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: var(--color-text);
+}
+
+/* 글자 수 */
+.ai-gen-char-count {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--color-gray-dark);
+  margin-left: auto;
+}

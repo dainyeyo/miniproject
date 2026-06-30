@@ -10,10 +10,21 @@ const DEFAULT_FALLBACK_WORDS = [
 
 export default function GamePage() {
   // ==========================================
+  // AI Image Generator Configuration & State
+  // ==========================================
+  const AI_CONFIG = {
+    WS_URL:          'ws://localhost:8000/ws/generate',
+    API_BASE:        'http://localhost:8000',
+    DEBOUNCE_MS:     700,      // 입력 후 대기 시간 (ms)
+    WS_RECONNECT_MS: 3000,    // WebSocket 재연결 간격 (ms)
+    MAX_RECONNECT:   5,        // 최대 재연결 시도 횟수
+  };
+
+  // ==========================================
   // 1. React 상태(State) 설계
   // ==========================================
   const [currentScreen, setCurrentScreen] = useState('screen-landing'); // landing, waiting, game, voting, result
-  const [selectedMode, setSelectedMode] = useState('human'); // human 고정 (일반 모드로 단일화)
+  const [selectedMode, setSelectedMode] = useState('human'); // human, ai
   const [nickname, setNickname] = useState('꼬마달걀');
   
   // 브러시 도구 설정 상태
@@ -43,9 +54,26 @@ export default function GamePage() {
   // Neon DB 로딩 단어 풀 캐싱
   const [wordPool, setWordPool] = useState([]);
 
+  // AI 관련 React 상태
+  const [aiStatus, setAiStatus] = useState('loading'); // 'loading', 'ready', 'generating', 'error'
+  const [aiStatusText, setAiStatusText] = useState('서버 연결 중...');
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [isAiRealtime, setIsAiRealtime] = useState(true);
+  const [aiSteps, setAiSteps] = useState(1);
+  const [aiImageSrc, setAiImageSrc] = useState(null);
+  const [aiImageMeta, setAiImageMeta] = useState('');
+  const [aiErrorMsg, setAiErrorMsg] = useState('');
+  const [aiIsGenerating, setAiIsGenerating] = useState(false);
+
   // ==========================================
   // 2. React Refs 선언 (Canvas, Scroll, Bot interval)
   // ==========================================
+  const aiWsRef = useRef(null);
+  const aiReconnectCountRef = useRef(0);
+  const aiReconnectTimerRef = useRef(null);
+  const aiDebounceTimerRef = useRef(null);
+  const lastAiPromptRef = useRef('');
+
   const canvasRef = useRef(null);
   const isDrawingRef = useRef(false);
   const lastPosRef = useRef({ x: 0, y: 0 });
@@ -101,6 +129,190 @@ export default function GamePage() {
     if (!ctx) return;
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+  };
+
+  // ==========================================
+  // AI 이미지 생성기 엔진 (SD-Turbo Integration)
+  // ==========================================
+  const checkAiServerStatus = async () => {
+    try {
+      const res = await fetch(`${AI_CONFIG.API_BASE}/api/status`, { signal: AbortSignal.timeout(5000) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch (err) {
+      console.error('AI 서버 상태 확인 실패:', err.message);
+      return null;
+    }
+  };
+
+  const connectAiWebSocket = () => {
+    if (aiReconnectCountRef.current >= AI_CONFIG.MAX_RECONNECT) {
+      console.warn('WebSocket 재연결 한도 초과 → HTTP 모드로 전환');
+      setAiStatus('ready');
+      setAiStatusText('HTTP 모드 (WebSocket 불가)');
+      return;
+    }
+
+    console.log(`AI WebSocket 연결 시도 (${aiReconnectCountRef.current + 1}/${AI_CONFIG.MAX_RECONNECT})`);
+    setAiStatus('loading');
+    setAiStatusText('WebSocket 연결 중...');
+
+    const ws = new WebSocket(AI_CONFIG.WS_URL);
+    aiWsRef.current = ws;
+
+    ws.addEventListener('open', () => {
+      console.log('✅ AI WebSocket 연결됨');
+      aiReconnectCountRef.current = 0;
+      setAiStatus('ready');
+      setAiStatusText('WebSocket 연결됨');
+      setAiErrorMsg('');
+    });
+
+    ws.addEventListener('message', (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        handleAiServerMessage(data);
+      } catch (err) {
+        console.error('WebSocket 메시지 파싱 실패:', event.data);
+      }
+    });
+
+    ws.addEventListener('close', (event) => {
+      console.warn('AI WebSocket 연결 종료:', event.code, event.reason);
+      setAiIsGenerating(false);
+
+      if (event.code !== 1000) {
+        setAiStatusText(`재연결 대기 중... (${aiReconnectCountRef.current + 1}/${AI_CONFIG.MAX_RECONNECT})`);
+        aiReconnectCountRef.current++;
+        aiReconnectTimerRef.current = setTimeout(connectAiWebSocket, AI_CONFIG.WS_RECONNECT_MS);
+      } else {
+        setAiStatus('ready');
+        setAiStatusText('HTTP 모드');
+      }
+    });
+
+    ws.addEventListener('error', (err) => {
+      console.error('AI WebSocket 오류:', err);
+    });
+  };
+
+  const handleAiServerMessage = (data) => {
+    switch (data.status) {
+      case 'generating':
+        setAiIsGenerating(true);
+        setAiStatus('generating');
+        setAiStatusText('생성 중');
+        setAiErrorMsg('');
+        break;
+
+      case 'done':
+        setAiIsGenerating(false);
+        setAiStatus('ready');
+        setAiStatusText(aiWsRef.current && aiWsRef.current.readyState === WebSocket.OPEN ? 'WebSocket 연결됨' : 'HTTP 모드');
+        if (data.image) {
+          setAiImageSrc(data.image);
+          setAiImageMeta(`"${data.prompt || lastAiPromptRef.current}" — ${new Date().toLocaleTimeString('ko-KR')}`);
+          addSystemMsg(`🤖 AI가 새로운 그림 "${data.prompt || lastAiPromptRef.current}" 생성을 마쳤습니다!`);
+        }
+        break;
+
+      case 'error':
+        setAiIsGenerating(false);
+        setAiStatus('error');
+        setAiStatusText('오류');
+        setAiErrorMsg(data.error || '알 수 없는 오류가 발생했습니다.');
+        break;
+
+      default:
+        console.warn('알 수 없는 메시지 status:', data.status);
+    }
+  };
+
+  const generateAiViaHTTP = async (prompt, steps) => {
+    setAiIsGenerating(true);
+    setAiStatus('generating');
+    setAiStatusText('생성 중 (HTTP)');
+    try {
+      const response = await fetch(`${AI_CONFIG.API_BASE}/api/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, steps }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || `서버 오류 (${response.status})`);
+      }
+      handleAiServerMessage({ status: 'done', image: data.image, prompt: data.prompt });
+    } catch (err) {
+      handleAiServerMessage({ status: 'error', error: err.message });
+    } finally {
+      setAiIsGenerating(false);
+    }
+  };
+
+  const requestAiGenerate = (prompt) => {
+    if (!prompt || aiIsGenerating) return;
+
+    lastAiPromptRef.current = prompt;
+    setAiErrorMsg('');
+
+    if (aiWsRef.current && aiWsRef.current.readyState === WebSocket.OPEN) {
+      aiWsRef.current.send(JSON.stringify({ prompt, steps: aiSteps }));
+      setAiIsGenerating(true);
+      setAiStatus('generating');
+      setAiStatusText('생성 중');
+    } else {
+      generateAiViaHTTP(prompt, aiSteps);
+    }
+  };
+
+  const cleanupAiGenerator = () => {
+    if (aiWsRef.current) {
+      aiWsRef.current.close();
+      aiWsRef.current = null;
+    }
+    if (aiReconnectTimerRef.current) {
+      clearTimeout(aiReconnectTimerRef.current);
+      aiReconnectTimerRef.current = null;
+    }
+    if (aiDebounceTimerRef.current) {
+      clearTimeout(aiDebounceTimerRef.current);
+      aiDebounceTimerRef.current = null;
+    }
+    aiReconnectCountRef.current = 0;
+  };
+
+  const triggerAiDrawing = async (keyword) => {
+    setAiImageSrc(null);
+    setAiImageMeta('');
+    setAiErrorMsg('');
+    setAiIsGenerating(false);
+    setAiStatus('loading');
+    setAiStatusText('서버 연결 중...');
+
+    const serverStatus = await checkAiServerStatus();
+
+    if (!serverStatus) {
+      setAiStatus('error');
+      setAiStatusText('서버 연결 실패');
+      setAiErrorMsg('백엔드 서버에 연결할 수 없습니다. backend/ 폴더에서 "python main.py" 명령으로 서버를 먼저 시작하세요.');
+      return;
+    }
+
+    if (!serverStatus.ready) {
+      setAiStatus('error');
+      setAiStatusText('모델 로드 실패');
+      setAiErrorMsg('AI 모델 로드에 실패했습니다. 서버 로그를 확인하세요.');
+      return;
+    }
+
+    console.log(`AI 모델 준비됨 — 디바이스: ${serverStatus.device}`);
+    connectAiWebSocket();
+
+    setAiPrompt(keyword);
+    if (isAiRealtime && keyword) {
+      requestAiGenerate(keyword);
+    }
   };
 
   // ==========================================
@@ -197,6 +409,13 @@ export default function GamePage() {
     return () => clearInterval(timer);
   }, [currentScreen, timerSeconds]);
 
+  // AI 연결 생명주기 관리용 Effect
+  useEffect(() => {
+    return () => {
+      cleanupAiGenerator();
+    };
+  }, []);
+
   // ==========================================
   // 6. 게임 진행 흐름 제어 로직 (Game Controller)
   // ==========================================
@@ -204,7 +423,7 @@ export default function GamePage() {
   // 게임 시작 버튼 이벤트
   const startGame = () => {
     // 세션 초기화 클렌징
-    setChatLog([{ type: 'system-msg', text: `🎮 새로운 게임이 시작되었습니다! (모드: 일반 모드)` }]);
+    setChatLog([{ type: 'system-msg', text: `🎮 새로운 게임이 시작되었습니다! (모드: ${selectedMode === 'ai' ? 'AI 드로잉 모드' : '일반 모드'})` }]);
     setCurrentRound(1);
 
     // 최소 플레이어 수(봇 포함 4명) 충족
@@ -238,8 +457,12 @@ export default function GamePage() {
     gameRunningRef.current = true;
     setCurrentScreen('screen-game');
     
-    // 봇 시뮬레이션 연동 시작
-    triggerBotGameplay(randWord);
+    // 모드에 따라 분기
+    if (selectedMode === 'ai') {
+      triggerAiDrawing(randWord);
+    } else {
+      triggerBotGameplay(randWord);
+    }
   };
 
   // 타이머 만료 시 흐름 제어 분기
@@ -247,6 +470,7 @@ export default function GamePage() {
     if (currentScreen === 'screen-game') {
       if (currentRound < maxRound) {
         addSystemMsg(`⏳ 라운드 종료! 2초 뒤 다음 라운드로 전환합니다.`);
+        cleanupAiGenerator();
         setTimeout(() => {
           setCurrentRound(prev => {
             const nextRound = prev + 1;
@@ -257,12 +481,18 @@ export default function GamePage() {
             setTimerSeconds(45);
             setTimerMax(45);
             addSystemMsg(`🎨 Round ${nextRound} 시작! 제시어를 확인해 주세요.`);
-            triggerBotGameplay(newWord);
+            
+            if (selectedMode === 'ai') {
+              triggerAiDrawing(newWord);
+            } else {
+              triggerBotGameplay(newWord);
+            }
             return nextRound;
           });
         }, 2000);
       } else {
         addSystemMsg('🏆 모든 라운드가 종료되었습니다! 최종 결과를 발표합니다.');
+        cleanupAiGenerator();
         setTimeout(() => {
           setCurrentScreen('screen-result');
         }, 2000);
@@ -272,6 +502,7 @@ export default function GamePage() {
 
   // 대기실 복귀 리셋
   const goHome = () => {
+    cleanupAiGenerator();
     setChatLog([{ type: 'system-msg', text: '대기실로 돌아왔습니다. 다음 게임을 준비해 주세요.' }]);
     setPlayers(prev => prev.map(p => {
       if (p.isMe) {
@@ -499,11 +730,38 @@ export default function GamePage() {
 
               {/* 2열(메인): 게임 모드 설명 */}
               <section className="waiting-modes-section">
-                <h3 className="section-title" style={{ margin: 0 }}>게임 모드</h3>
-                
-                <div className="mode-desc-card">
-                  <h4>🎨 일반 모드 (바닐라 드로잉)</h4>
-                  <p>참가자들이 순서대로 돌아가며 캔버스에 단어 그림을 그리고, 다른 플레이어들이 정답을 입력하여 맞추는 가장 기본적이고 직관적인 드로잉 퀴즈입니다.</p>
+                <h3 className="section-title" style={{ margin: 0, marginBottom: '12px' }}>게임 모드 선택</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div 
+                    className={`mode-desc-card ${selectedMode === 'human' ? 'active-mode' : ''}`}
+                    onClick={() => setSelectedMode('human')}
+                    style={{ 
+                      cursor: 'pointer', 
+                      border: selectedMode === 'human' ? '3px solid var(--color-primary)' : '2px solid var(--color-border)',
+                      borderRadius: '16px',
+                      padding: '14px',
+                      transition: 'all 0.2s ease',
+                      boxShadow: selectedMode === 'human' ? '0 4px 0 0 var(--color-primary)' : 'none'
+                    }}
+                  >
+                    <h4 style={{ margin: '0 0 6px 0', fontSize: '0.95rem' }}>🎨 일반 모드 (바닐라 드로잉)</h4>
+                    <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--color-gray-dark)', lineHeight: '1.4' }}>참가자들이 직접 캔버스에 마우스나 터치로 그림을 그리고, 다른 플레이어가 정답을 맞추는 클래식 모드입니다.</p>
+                  </div>
+                  <div 
+                    className={`mode-desc-card ${selectedMode === 'ai' ? 'active-mode' : ''}`}
+                    onClick={() => setSelectedMode('ai')}
+                    style={{ 
+                      cursor: 'pointer', 
+                      border: selectedMode === 'ai' ? '3px solid var(--color-secondary)' : '2px solid var(--color-border)',
+                      borderRadius: '16px',
+                      padding: '14px',
+                      transition: 'all 0.2s ease',
+                      boxShadow: selectedMode === 'ai' ? '0 4px 0 0 var(--color-secondary)' : 'none'
+                    }}
+                  >
+                    <h4 style={{ margin: '0 0 6px 0', fontSize: '0.95rem' }}>⚡ AI 드로잉 모드 (SD-Turbo 연동)</h4>
+                    <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--color-gray-dark)', lineHeight: '1.4' }}>실시간 AI 이미지 생성을 활용하여 프롬프트를 입력하면 AI가 실시간으로 그림을 그려내는 모드입니다.</p>
+                  </div>
                 </div>
               </section>
 
@@ -559,8 +817,8 @@ export default function GamePage() {
                 <span className="logo-text">EGGG</span>
               </div>
               <div className="game-mode-tag">
-                <span className="mode-badge" style={{ backgroundColor: 'var(--color-border)' }}>
-                  일반 모드
+                <span className="mode-badge" style={{ backgroundColor: selectedMode === 'ai' ? 'var(--color-secondary)' : 'var(--color-border)' }}>
+                  {selectedMode === 'ai' ? 'AI 드로잉 모드' : '일반 모드'}
                 </span>
                 <span className="round-indicator">Round {currentRound} / {maxRound}</span>
               </div>
@@ -604,61 +862,208 @@ export default function GamePage() {
               </div>
             </aside>
 
-            {/* 가운데: 그림판 그리기 영역 (제시어 캔버스 좌상단 플로팅 포함) */}
+            {/* 가운데: 그림판 그리기 영역 혹은 AI 이미지 생성기 */}
             <section className="game-main-area">
-              <div className="sub-game-view active-subview">
-                <div className="canvas-wrapper">
-                  {/* 제시어 오버레이 카드 */}
-                  <div className="keyword-box canvas-keyword-overlay">
-                    <span className="keyword-label">제시어</span>
-                    <span className="keyword-text">{currentKeyword}</span>
-                  </div>
-                  
-                  <canvas
-                    id="drawing-canvas"
-                    ref={canvasRef}
-                    onMouseDown={handleDrawingStart}
-                    onMouseMove={handleDrawingMove}
-                    onMouseUp={handleDrawingEnd}
-                    onMouseLeave={handleDrawingEnd}
-                    onTouchStart={handleDrawingStart}
-                    onTouchMove={handleDrawingMove}
-                    onTouchEnd={handleDrawingEnd}
-                  />
-                </div>
+              {selectedMode === 'ai' ? (
+                /* View B: AI Drawing & Loading Area (AI Drawing Mode) — SD-Turbo 연동 */
+                <div id="subview-ai" className="sub-game-view active-subview">
+                  <div className="ai-gen-layout">
 
-                <div className="drawing-tools">
-                  <div className="tool-group colors">
-                    {['#2D3748', '#E53E3E', '#DD6B20', '#FFD23F', '#38A169', '#3182CE', '#9F7AEA', '#FF69B4'].map((col) => (
-                      <button
-                        key={col}
-                        className={`color-dot ${brushColor === col && !isEraser ? 'active' : ''}`}
-                        style={{ backgroundColor: col }}
-                        onClick={() => { setBrushColor(col); setIsEraser(false); }}
-                      />
-                    ))}
-                  </div>
-                  
-                  <div className="tool-group brush-sizes">
-                    {[{ size: 4, label: 'small' }, { size: 10, label: 'medium' }, { size: 20, label: 'large' }].map((s) => (
-                      <button
-                        key={s.size}
-                        className={`size-dot size-${s.label} ${brushSize === s.size ? 'active' : ''}`}
-                        onClick={() => setBrushSize(s.size)}
-                      />
-                    ))}
-                  </div>
+                    {/* 서버 상태 뱃지 */}
+                    <div id="ai-status-badge" className={`ai-status-badge ai-st-${aiStatus}`} role="status" aria-live="polite">
+                      <span className="ai-status-dot"></span>
+                      <span id="ai-status-text">{aiStatusText}</span>
+                    </div>
 
-                  <div className="tool-group action-tools">
-                    <button className={`btn-secondary ${isEraser ? 'active' : ''}`} onClick={() => setIsEraser(true)}>
-                      🧹 지우개
-                    </button>
-                    <button className="btn-secondary" onClick={clearCanvas}>
-                      🗑️ 전체 지우기
-                    </button>
+                    {/* 중앙: 이미지 표시 영역 */}
+                    <div className="ai-gen-image-area" id="ai-image-container">
+
+                      {/* 빈 상태 플레이스홀더 */}
+                      {!aiImageSrc && (
+                        <div className="ai-gen-placeholder" id="ai-placeholder">
+                          <div className="ai-gen-placeholder-icon">🎨</div>
+                          <p>프롬프트를 입력하면<br />AI가 이미지를 생성합니다</p>
+                        </div>
+                      )}
+
+                      {/* 생성된 이미지 */}
+                      {aiImageSrc && (
+                        <img 
+                          id="ai-generated-image" 
+                          src={aiImageSrc} 
+                          alt="AI가 생성한 이미지" 
+                          title="생성된 이미지" 
+                          style={{ display: 'block' }}
+                        />
+                      )}
+
+                      {/* 로딩 오버레이 */}
+                      <div className={`ai-gen-loading-overlay ${aiIsGenerating ? 'visible' : ''}`} id="ai-loading-overlay" aria-live="polite">
+                        <div className="ai-gen-spinner"></div>
+                        <span className="ai-gen-loading-text" id="ai-loading-text">이미지 생성 중...</span>
+                      </div>
+
+                      {/* 이미지 메타 정보 (hover 시 표시) */}
+                      {aiImageMeta && (
+                        <div className="ai-gen-image-meta" id="ai-image-meta">
+                          {aiImageMeta}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 에러 메시지 */}
+                    <div id="ai-error-box" className={`ai-gen-error-box ${aiErrorMsg ? 'visible' : ''}`} role="alert" aria-live="assertive">
+                      <span className="ai-gen-error-icon">⚠️</span>
+                      <span id="ai-error-text">{aiErrorMsg}</span>
+                    </div>
+
+                    {/* 하단: 프롬프트 입력 + 옵션 */}
+                    <div className="ai-gen-controls">
+                      <div className="ai-gen-prompt-row">
+                        <textarea
+                          id="ai-prompt-input"
+                          placeholder="원하는 이미지를 설명하세요&#10;예: a cute fried egg character, kawaii style, pastel colors"
+                          maxLength={500}
+                          aria-label="이미지 생성 프롬프트 입력"
+                          rows={2}
+                          value={aiPrompt}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setAiPrompt(val);
+                            
+                            // 실시간 자동 생성 처리 (Debounced)
+                            if (aiDebounceTimerRef.current) clearTimeout(aiDebounceTimerRef.current);
+                            aiDebounceTimerRef.current = setTimeout(() => {
+                              if (isAiRealtime && val.trim()) {
+                                requestAiGenerate(val.trim());
+                              }
+                            }, AI_CONFIG.DEBOUNCE_MS);
+                          }}
+                          onKeyDown={(e) => {
+                            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                              e.preventDefault();
+                              requestAiGenerate(aiPrompt.trim());
+                            }
+                          }}
+                        ></textarea>
+                        <button 
+                          id="ai-generate-btn" 
+                          className="btn-primary ai-gen-btn" 
+                          aria-label="이미지 생성"
+                          disabled={aiIsGenerating}
+                          onClick={() => {
+                            const prompt = aiPrompt.trim();
+                            if (!prompt) {
+                              setAiErrorMsg('프롬프트를 입력해주세요.');
+                              return;
+                            }
+                            requestAiGenerate(prompt);
+                          }}
+                        >
+                          <span id="ai-btn-icon">{aiIsGenerating ? '⏳' : '⚡'}</span>
+                          <span id="ai-btn-text">{aiIsGenerating ? '생성 중...' : '생성'}</span>
+                        </button>
+                      </div>
+
+                      <div className="ai-gen-options-row">
+                        {/* 실시간 자동 생성 토글 */}
+                        <label class="ai-gen-toggle-label">
+                          <input 
+                            type="checkbox" 
+                            id="ai-realtime-toggle" 
+                            checked={isAiRealtime} 
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              setIsAiRealtime(checked);
+                              if (checked && aiPrompt.trim()) {
+                                requestAiGenerate(aiPrompt.trim());
+                              }
+                            }}
+                          />
+                          <span className="ai-gen-toggle-switch"></span>
+                          <span>실시간</span>
+                        </label>
+
+                        {/* Steps 슬라이더 */}
+                        <div className="ai-gen-steps-group">
+                          <span>Steps</span>
+                          <input 
+                            type="range" 
+                            id="ai-steps-slider" 
+                            min="1" 
+                            max="4" 
+                            value={aiSteps} 
+                            step="1"
+                            onChange={(e) => setAiSteps(parseInt(e.target.value, 10))}
+                          />
+                          <span className="ai-gen-steps-value" id="ai-steps-display">{aiSteps}</span>
+                        </div>
+
+                        {/* 글자 수 */}
+                        <span className="ai-gen-char-count" id="ai-char-count">
+                          {aiPrompt.length} / 500
+                        </span>
+                      </div>
+                    </div>
+
                   </div>
                 </div>
-              </div>
+              ) : (
+                /* View A: 일반 드로잉 캔버스 */
+                <div className="sub-game-view active-subview">
+                  <div className="canvas-wrapper">
+                    {/* 제시어 오버레이 카드 */}
+                    <div className="keyword-box canvas-keyword-overlay">
+                      <span className="keyword-label">제시어</span>
+                      <span className="keyword-text">{currentKeyword}</span>
+                    </div>
+                    
+                    <canvas
+                      id="drawing-canvas"
+                      ref={canvasRef}
+                      onMouseDown={handleDrawingStart}
+                      onMouseMove={handleDrawingMove}
+                      onMouseUp={handleDrawingEnd}
+                      onMouseLeave={handleDrawingEnd}
+                      onTouchStart={handleDrawingStart}
+                      onTouchMove={handleDrawingMove}
+                      onTouchEnd={handleDrawingEnd}
+                    />
+                  </div>
+
+                  <div className="drawing-tools">
+                    <div className="tool-group colors">
+                      {['#2D3748', '#E53E3E', '#DD6B20', '#FFD23F', '#38A169', '#3182CE', '#9F7AEA', '#FF69B4'].map((col) => (
+                        <button
+                          key={col}
+                          className={`color-dot ${brushColor === col && !isEraser ? 'active' : ''}`}
+                          style={{ backgroundColor: col }}
+                          onClick={() => { setBrushColor(col); setIsEraser(false); }}
+                        />
+                      ))}
+                    </div>
+                    
+                    <div className="tool-group brush-sizes">
+                      {[{ size: 4, label: 'small' }, { size: 10, label: 'medium' }, { size: 20, label: 'large' }].map((s) => (
+                        <button
+                          key={s.size}
+                          className={`size-dot size-${s.label} ${brushSize === s.size ? 'active' : ''}`}
+                          onClick={() => setBrushSize(s.size)}
+                        />
+                      ))}
+                    </div>
+
+                    <div className="tool-group action-tools">
+                      <button className={`btn-secondary ${isEraser ? 'active' : ''}`} onClick={() => setIsEraser(true)}>
+                        🧹 지우개
+                      </button>
+                      <button className="btn-secondary" onClick={clearCanvas}>
+                        🗑️ 전체 지우기
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </section>
 
             {/* 오른쪽: 채팅 피드 및 정답 창 */}
