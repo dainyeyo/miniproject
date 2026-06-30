@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- SEO -->
+  <title>AI 실시간 이미지 생성기 — SD-Turbo 프로토타입</title>
+  <meta name="description" content="텍스트 프롬프트를 입력하면 stabilityai/sd-turbo AI가 실시간으로 이미지를 생성합니다." />
+
+  <!-- 스타일 -->
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ── 헤더 ── -->
+  <header class="header">
+    <h1>✦ AI 이미지 생성기</h1>
+    <p class="subtitle">SD-Turbo · 실시간 프로토타입</p>
+  </header>
+
+  <!-- ── 서버 상태 뱃지 ── -->
+  <div id="status-badge" class="status-badge" role="status" aria-live="polite">
+    <span class="status-dot"></span>
+    <span id="status-text">서버 연결 중...</span>
+  </div>
+
+  <!-- ── 메인 레이아웃 ── -->
+  <main class="main-layout">
+
+    <!-- 좌측: 컨트롤 패널 -->
+    <section class="control-panel" aria-label="이미지 생성 컨트롤">
+
+      <!-- 프롬프트 입력 -->
+      <div class="card">
+        <div class="card-label">프롬프트</div>
+        <div class="prompt-wrapper">
+          <textarea
+            id="prompt-input"
+            placeholder="원하는 이미지를 설명하세요&#10;예: a futuristic city at sunset, cyberpunk style, detailed"
+            maxlength="500"
+            aria-label="이미지 생성 프롬프트 입력"
+            rows="5"
+          ></textarea>
+          <span class="char-count" id="char-count">0 / 500</span>
+        </div>
+      </div>
+
+      <!-- 생성 버튼 -->
+      <button id="generate-btn" class="btn-primary" aria-label="이미지 생성">
+        <span id="btn-icon">⚡</span>
+        <span id="btn-text">이미지 생성</span>
+      </button>
+
+      <!-- 오류 메시지 -->
+      <div id="error-box" class="error-box" role="alert" aria-live="assertive">
+        <span class="error-icon">⚠️</span>
+        <span id="error-text"></span>
+      </div>
+
+      <!-- 옵션 -->
+      <div class="card">
+        <div class="card-label">옵션</div>
+        <div class="options-row">
+
+          <!-- 실시간 자동 생성 토글 -->
+          <div class="toggle-row">
+            <div class="toggle-label">
+              <span>실시간 자동 생성</span>
+              <span>입력 후 700ms 뒤 자동 생성</span>
+            </div>
+            <label class="toggle" aria-label="실시간 모드 켜기/끄기">
+              <input type="checkbox" id="realtime-toggle" checked />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+
+          <!-- 추론 Steps 슬라이더 -->
+          <div class="slider-row">
+            <div class="slider-header">
+              <span>추론 Steps</span>
+              <span class="slider-value" id="steps-display">1</span>
+            </div>
+            <input
+              type="range"
+              id="steps-slider"
+              min="1"
+              max="4"
+              value="1"
+              step="1"
+              aria-label="추론 스텝 수 (1-4)"
+            />
+            <small style="color: var(--text-muted); font-size: 0.72rem;">
+              SD-Turbo는 1~2 권장 · 높을수록 품질↑ 속도↓
+            </small>
+          </div>
+
+        </div>
+      </div>
+
+    </section>
+
+    <!-- 우측: 이미지 캔버스 -->
+    <section class="canvas-panel" aria-label="생성된 이미지">
+
+      <div class="image-container" id="image-container">
+
+        <!-- 빈 상태 플레이스홀더 -->
+        <div class="canvas-placeholder" id="placeholder">
+          <div class="placeholder-icon">🎨</div>
+          <p>프롬프트를 입력하면<br>AI가 이미지를 생성합니다</p>
+        </div>
+
+        <!-- 생성된 이미지 -->
+        <img
+          id="generated-image"
+          alt="AI가 생성한 이미지"
+          title="생성된 이미지"
+        />
+
+        <!-- 로딩 오버레이 -->
+        <div class="loading-overlay" id="loading-overlay" aria-live="polite">
+          <div class="spinner"></div>
+          <span class="loading-text" id="loading-text">이미지 생성 중...</span>
+        </div>
+
+        <!-- 이미지 메타 정보 (hover 시 표시) -->
+        <div class="image-meta" id="image-meta"></div>
+
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- ── 생성 히스토리 ── -->
+  <section class="history-section" aria-label="생성 히스토리">
+    <div class="history-title">최근 생성 이미지</div>
+    <div class="history-grid" id="history-grid">
+      <p style="color: var(--text-muted); font-size: 0.82rem; align-self: center;">
+        아직 생성된 이미지가 없습니다.
+      </p>
+    </div>
+  </section>
+
+</div>
+
+<!-- JavaScript -->
+<script src="/static/app.js"></script>
+
+</body>
+</html>

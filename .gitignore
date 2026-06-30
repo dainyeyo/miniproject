@@ -9,3 +9,9 @@ Thumbs.db
 # Next.js build output
 .next/
 out/
+
+# Python Virtual Environments
+model/TEST/venv/
+model/TEST/venv311/
+**/venv/
+**/venv311/

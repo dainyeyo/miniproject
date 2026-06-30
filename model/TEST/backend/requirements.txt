@@ -1,0 +1,34 @@
+# ─────────────────────────────────────────────────
+# AI 실시간 이미지 생성 프로토타입 — Backend 의존성
+# ─────────────────────────────────────────────────
+
+# 웹 프레임워크
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+
+# AI 모델 (Hugging Face Diffusers)
+# torch는 CUDA 버전에 맞게 별도 설치 필요 (아래 README 참고)
+diffusers>=0.27.0
+transformers>=4.40.0
+accelerate>=0.30.0
+
+# 이미지 처리
+Pillow>=10.0.0
+
+# 기타 유틸리티
+python-multipart>=0.0.9   # FastAPI 파일 업로드용 (미래 확장)
+pydantic>=2.0.0
+
+# ─────────────────────────────────────────────────
+# [주의] PyTorch 설치는 아래 명령어를 직접 실행하세요.
+# CUDA 버전에 따라 다릅니다.
+#
+# CUDA 12.1 (RTX 30xx / 40xx):
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+#
+# CUDA 11.8:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+#
+# CPU만 사용 (매우 느림):
+#   pip install torch torchvision
+# ─────────────────────────────────────────────────
