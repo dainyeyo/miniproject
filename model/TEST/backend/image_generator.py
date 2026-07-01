@@ -220,29 +220,8 @@ class SDTurboGenerator:
         image: Image.Image = result.images[0]
 
         elapsed = time.time() - start
-        # 1안: 로컬 static 폴더에 파일 저장 (Vercel Payload Limit 우회를 위한 절대 권장 구조)
-        try:
-            from pathlib import Path
-            static_dir = Path(__file__).parent.parent / "frontend" / "static_images"
-            static_dir.mkdir(parents=True, exist_ok=True)
-            
-            filename = f"gen_{uuid.uuid4().hex}.png"
-            file_path = static_dir / filename
-            
-            image.save(file_path, format="PNG")
-            logger.info(f"💾 [로컬 파일 저장 성공]: {file_path}")
-            
-            # 절대 경로가 아닌, 상대 경로 형식으로 리턴 후 main.py에서 절대 주소로 빌드
-            return f"/static/static_images/{filename}"
-        except Exception as local_save_err:
-            logger.error(f"❌ [로컬 파일 저장 실패]: {local_save_err}")
-
-        # 2안: 이미지 공유를 위해 무료 이미지 호스팅(Catbox)에 먼저 업로드 시도
-        shared_url = upload_to_catbox(image)
-        if shared_url:
-            return shared_url
-
-        # 업로드 실패 시 폴백으로 로컬용 base64 문자열 반환
+        # [변경 사항] 로컬 디스크 I/O를 방지하고 Git 이력 오염을 차단하기 위해
+        # 디스크 저장을 생략하고 즉시 In-Memory 상에서 Base64로 인코딩하여 반환합니다.
         return pil_to_base64(image)
 
     def is_gpu(self) -> bool:

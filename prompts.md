@@ -348,3 +348,26 @@
   - `app/page.js`에 게임 진입 시 AI 백엔드 상태를 1회 조회해 뱃지를 세팅해 주는 공통 `useEffect`를 신설하여 비출제자 화면이 무한 로딩에 갇히던 상태 연동 버그 퇴치.
   - `requestAiGenerate` 함수를 HTTP 단일 통로(`generateAiViaHTTP`)만 사용하도록 단순화 조치.
   - 새 코드가 탑재된 AI 백엔드를 가동하기 위해 백그라운드 태스크(`task-328`)를 종료하고, `task-355`로 재기동 적용 완료.
+
+## 📌 18단계: AI 이미지 생성 로컬 디스크 저장 비활성화 및 메모리 스트림 전송 전환
+### 사용자의 지시 프롬프트 원문
+> 그 다 작동은 잘하는데 ai가 그린 그림들이 내 컴퓨터에 저장이 되는거 같은데 이거 저장 안되게 하고싶어 지금 깃허브에 올리면서 하는중이라 계속 사진이 생성되면 올려야 하는게 있다고 오해할 수도 있어서 근데 혹시 이게 사진을 저장을 안하면 실행이 안되는건가?
+> 진행하고 현재까지 만들어진 사진도 지워줘
+
+### 기술적 해결책 및 아키텍처 의사결정(ADR) 요약
+1. **메모리 내 바이너리 스트림 변환 (In-Memory Buffer Stream) 적용**: 생성된 `PIL.Image` 객체를 로컬 하드 디스크 드라이브에 임시 파일로 쓰지 않고, 메모리상에서 `io.BytesIO` 바이트 스트림 객체를 통해 PNG 바이너리화한 후 즉시 Base64 텍스트 문자열 데이터 URL(`data:image/png;base64,...`)로 인코딩하여 반환하도록 설계. 이를 통해 로컬 스토리지 누적과 불필요한 디스크 I/O 레이턴시를 원천 차단.
+2. **Git 추적 방어막(Git Ignore) 설치**: 프로젝트 루트의 `.gitignore` 파일에 AI 자동 이미지 임시 생성 경로인 `model/TEST/frontend/static_images/`를 명시적으로 등록하여, 향후 개발 및 테스트 중 물리적인 이미지 저장이 발생하더라도 깃허브 원격 리포지토리에 오염되지 않도록 보장.
+3. **기존 파일 시스템 클렌징**: 쉘 명령어를 활용하여 로컬 파일 시스템 내 정적 리소스 디렉토리(`static_images/`)에 잔류하던 이전 라운드 이미지 세션 파일들을 일괄 소거.
+
+---
+## 🕒 작업 변경 이력 (Changelog)
+
+### 🕒 2026-07-01 16:55 - AI 이미지 로컬 저장 배제 및 In-Memory Base64 반환 완료
+- **변경 목적**: 로컬 PC 내 생성 이미지 누적으로 인한 Git 관리 혼선 방지 및 I/O 오버헤드 완화
+- **수정/추가된 파일**:
+  - [image_generator.py](file:///c:/MiniProject/miniproject/model/TEST/backend/image_generator.py) (수정)
+  - [.gitignore](file:///c:/MiniProject/miniproject/.gitignore) (수정)
+- **세부 변경점**:
+  - `model/TEST/backend/image_generator.py` 내 `SDTurboGenerator.generate` 함수에서 로컬 디스크 파일 저장 시도 블록과 이미지 무료 호스팅 API 업로드 루틴을 롤백(제거)하고, `pil_to_base64(image)` 메서드를 직접 호출하여 즉시 메모리 내 인코딩 스트림 문자열을 반환하도록 로직 개량.
+  - `.gitignore` 최하단에 `model/TEST/frontend/static_images/` 경로를 추가하여 혹시 모를 로컬 이미지 캐시 생성이 Git 원격 리포지토리 변경이력에 간섭하는 현상 방지.
+  - PowerShell 터미널을 경유하여 `static_images/` 내부의 `gen_*.png` 파일 28개를 일괄 제거하여 디스크 공간 클렌징 완료.
