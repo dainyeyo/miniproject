@@ -187,6 +187,42 @@
   - `app/page.js`의 `requestAiGenerate` 함수 진입부 최상단에 프롬프트 정규화 비교(공백 제거, 소문자 변환) 코드를 신설.
   - 정제된 프롬프트가 제시어를 담고 있는 경우, 에러 상태(`setAiErrorMsg`)를 갱신하고 생성을 중단하여 즉각적인 차단 및 시각적 피드백 제공.
 
+## 📌 10단계: GPU 하드웨어 설정 가이드 작성 및 개발 문서 보완
+### 사용자의 지시 프롬프트 원문
+> AI 이미지 생성기 GPU 설정 가이드... 해줘
+
+### 기술적 해결책 및 아키텍처 의사결정(ADR) 요약
+1. **문서 통합 및 환경 최적화 명세화**: 분산되어 있던 기존 SD-Turbo 실시간 프론트 가이드와 사용자가 전달한 CUDA 12.8 휠 빌드 및 `venv311` 가상환경 설치법을 구조적으로 통합.
+2. **유실된 시스템 리소스 경로 규명**: Hugging Face 모델 캐시의 Windows 기본 스토리지 물리 주소(`C:\Users\<사용자명>\.cache\huggingface` 및 `%USERPROFILE%\.cache\huggingface`)를 확정 지어 문서화하여 트러블슈팅 효율성 증대.
+
+### 🕒 2026-07-01 10:52 - GPU 하드웨어 설정 가이드 작성 및 개발 문서 보완 완료
+- **변경 목적**: 로컬 및 클라우드 AI 서버 환경에서 NVIDIA CUDA 엔진 가속을 보장하기 위한 라이브러리 구성과 가상환경 초기화 시의 정책 설정 안내 강화.
+- **수정/추가된 파일**:
+  - [README.md](file:///c:/MiniProject/miniproject/model/TEST/README.md) (수정)
+- **세부 변경점**:
+  - `model/TEST/README.md` 내에 CUDA 12.8 대응 PyTorch 인스톨 커맨드와 PowerShell `RemoteSigned` 보안 정책 우회 스니펫 추가.
+  - 가속 구동 검증을 위한 `torch.cuda.is_available()` 모니터링 원라인 파이썬 코드 및 `/api/status` 확인 방법 기술.
+  - 미완성 상태였던 Hugging Face 모델 캐시 디스크 윈도우 스토리지 경로를 완성하여 기입.
+
+## 📌 11단계: GPU 백엔드 가상환경 구축, 의존성 결함 해결 및 서빙 가동
+### 사용자의 지시 프롬프트 원문
+> 아니 이 내용대로 실행을 해달라고 설치할거 하고
+
+### 기술적 해결책 및 아키텍처 의사결정(ADR) 요약
+1. **인프라 셋업 및 GPU 가속 설치**: Python 3.13 및 NVIDIA RTX 5060 환경에 대응하는 CUDA 12.8 빌드 PyTorch와 관련 유틸 라이브러리를 가상환경(`venv311`)에 완전 적재.
+2. **런타임 패키지 누락 결함 조치**: 백엔드 모델 초기화 시 `deep-translator` 모듈 누락(`ModuleNotFoundError`)으로 인해 서버가 에러 루프에 빠지는 장애를 진단하고, 해당 패키지를 수동 주입함과 동시에 `requirements.txt`에 명시적으로 영구 반영.
+3. **백그라운드 영속 서빙**: Uvicorn 서빙 인스턴스를 비동기 백그라운드 태스크로 구동하고, 약 1.6GB의 `stabilityai/sd-turbo` 모델 가중치를 VRAM(float16)에 완전 적재 후 `/api/status` 헬스체크 응답 200을 정상 확인.
+
+### 🕒 2026-07-01 12:45 - GPU 백엔드 가상환경 구축 및 서빙 가동 완료
+- **변경 목적**: 사용자 로컬 그래픽 카드(GPU CUDA) 자원을 활용한 실시간 이미지 생성이 가능하도록 백엔드 실행 파일 및 파이썬 가상환경 초기화를 완성.
+- **수정/추가된 파일**:
+  - [requirements.txt](file:///c:/MiniProject/miniproject/model/TEST/backend/requirements.txt) (수정)
+- **세부 변경점**:
+  - `model/TEST` 내부 `venv311` 가상환경 생성 및 pip 최신화.
+  - CUDA 12.8 대응 PyTorch, torchvision, torchaudio 휠 패키지 및 FastAPI 런타임 패키지 적재.
+  - `requirements.txt`에 누락된 번역 의존 모듈 `deep-translator` 추가 설정.
+  - 가상환경 내에 `deep-translator` 강제 설치 후 FastAPI Uvicorn 백그라운드 서버 재가동 및 GPU 바인딩(status `cuda`) 완료.
+
 
 
 
