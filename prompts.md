@@ -324,3 +324,27 @@
   - `image_generator.py`에 생성된 PIL 이미지를 로컬 `frontend/static_images` 디렉토리에 고유 식별자(UUID) 파일명으로 즉시 저장하고 상대 경로(`/static/static_images/gen_xxx.png`)를 반환하는 루틴 구축.
   - `main.py`에 HTTP POST(`generate_image_http`) 및 WebSocket(`do_generate`) 요청 수신 시, Request 객체의 Headers(`x-forwarded-proto`, `host`)를 실시간 분석하여 공인 Cloudflare Tunnel 주소가 적용된 절대 URL 링크로 가공 후 리턴하는 가공 로직 보완.
   - 신규 로컬 백엔드 실행을 위해 기존 AI 백엔드 태스크(`task-163`)를 파괴하고 새 파이썬 바이너리 프로세스(`task-328`)로 무중단 재기동 완료.
+
+## 📌 17단계: AI 생성 단일 HTTP POST 통신 단일화 및 헬스 체크 통합 폴러 도입
+### 사용자의 지시 프롬프트 원문
+> 이게 맨처음엔 한명이 그린게 상대한테 보였거든? 근데 다시 수정해서 그리니까 연결중이라고만 뜨고 수정된 그림이 안보여 그리고 나서 그 다음 라운드부터는 그리는 사람은 websocket 연결중이라고 뜨는데 문제를 맞춰야 하는 사람들은 재연결대기중이라고 뜨는데 이거 어떻게 해결해 이거 cloudeflare 서버가 불안정한건가?
+
+### 기술적 해결책 및 아키텍처 의사결정(ADR) 요약
+1. **소켓 하트비트 타임아웃 해소**: AI 생성 작업(PyTorch 추론) 시 발생하는 스레드 독점으로 인해 웹소켓 Ping/Pong 하트비트가 지연되어 연결이 폭파(Disconnection)되던 문제를 차단하기 위해, 불안정한 WebSocket 방식을 걷어내고 일회성 HTTP POST (`generateAiViaHTTP`) 기반 단일 통신 구조로 개편.
+2. **동시성 락 뮤텍스(asyncio.Lock) 도입**: 여러 사용자가 프롬프트를 동시에 수정 및 재전송하더라도 PyTorch 파이프라인이 꼬이거나 데드락에 걸리지 않도록 `asyncio.Lock`을 장착하여 이미지 생성 연산을 백엔드 단에서 순차적으로 큐잉(Queueing) 직렬화 처리.
+3. **비출제자 상태 뱃지 동기화**: 비출제자들의 화면이 최초 진입 시 무한 로딩(`loading` 및 `재연결 대기중`)에 갇히는 문제를 핫픽스하기 위해, 게임 진입 시 출제자/비출제자 구분 없이 AI 백엔드 서버 상태를 1회 체크하여 뱃지를 초록색(`AI 서버 연결됨`)으로 자동 활성화하는 `useEffect` 연동 장치 마련.
+
+---
+## 🕒 작업 변경 이력 (Changelog)
+
+### 🕒 2026-07-01 16:22 - AI 서버 통신 HTTP POST 단일 채널 고도화 완료
+- **변경 목적**: GPU 추론 스레드 락으로 인한 소켓 끊김 현상(`재연결대기중...` 등) 영구 제거 및 동시 생성 요청 데드락 방지
+- **수정/추가된 파일**:
+  - [main.py](file:///c:/MiniProject/miniproject/model/TEST/backend/main.py) (수정)
+  - [page.js](file:///c:/MiniProject/miniproject/app/page.js) (수정)
+- **세부 변경점**:
+  - `main.py`에 `asyncio.Lock()` 기반의 전역 락 `generation_lock`을 선언하고, `generate_image_http` 연산 영역을 `async with generation_lock:` 블록으로 격리하여 순차 직렬화 보장.
+  - `app/page.js`에서 AI 모델 웹소켓 강제 자동 바인딩(`connectAiWebSocket`)을 영구 주석 처리하여 하트비트 연결 유실에 따른 소켓 폭파 유발 원인을 아키텍처적으로 완전 소멸시킴.
+  - `app/page.js`에 게임 진입 시 AI 백엔드 상태를 1회 조회해 뱃지를 세팅해 주는 공통 `useEffect`를 신설하여 비출제자 화면이 무한 로딩에 갇히던 상태 연동 버그 퇴치.
+  - `requestAiGenerate` 함수를 HTTP 단일 통로(`generateAiViaHTTP`)만 사용하도록 단순화 조치.
+  - 새 코드가 탑재된 AI 백엔드를 가동하기 위해 백그라운드 태스크(`task-328`)를 종료하고, `task-355`로 재기동 적용 완료.

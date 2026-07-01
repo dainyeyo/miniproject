@@ -352,14 +352,10 @@ export default function GamePage() {
     lastAiPromptRef.current = prompt;
     setAiErrorMsg('');
 
-    if (aiWsRef.current && aiWsRef.current.readyState === WebSocket.OPEN) {
-      aiWsRef.current.send(JSON.stringify({ prompt, steps: aiSteps }));
-      setAiIsGenerating(true);
-      setAiStatus('generating');
-      setAiStatusText('생성 중');
-    } else if (aiStatusText.includes('공공 AI')) {
+    if (aiStatusText.includes('공공 AI')) {
       generateAiViaPollinations(prompt);
     } else {
+      // WebSocket은 PyTorch GPU 추론 스레드 점유 시 타임아웃을 유발하므로 100% HTTP 단일 채널로 고정
       generateAiViaHTTP(prompt, aiSteps);
     }
   };
@@ -394,7 +390,6 @@ export default function GamePage() {
       console.log('로컬 AI 서버가 감지되지 않아 Pollinations.ai API로 대체합니다.');
       setAiStatus('ready');
       setAiStatusText('공공 AI 모드 (서버리스)');
-      // 플레이어 자율 입력 보장을 위해 자동 프롬프트 세팅 및 즉시 자동 생성을 비활성화하고 입력창을 비웁니다.
       setAiPrompt('');
       return;
     }
@@ -407,11 +402,33 @@ export default function GamePage() {
     }
 
     console.log(`AI 모델 준비됨 — 디바이스: ${serverStatus.device}`);
-    connectAiWebSocket();
+    // WebSocket 연결 시도를 생략하고 HTTP 채널 즉시 개방 상태로 전이
+    setAiStatus('ready');
+    setAiStatusText('AI 서버 연결됨');
 
-    // 플레이어 자율 입력 보장을 위해 자동 프롬프트 세팅 및 즉시 자동 생성을 비활성화하고 입력창을 비웁니다.
     setAiPrompt('');
   };
+
+  // AI 서버 상태 체크 및 초기 뱃지 활성화 (출제자/비출제자 공통)
+  useEffect(() => {
+    if (selectedMode === 'ai' && currentScreen === 'screen-game') {
+      const initAiStatus = async () => {
+        const serverStatus = await checkAiServerStatus();
+        if (serverStatus && serverStatus.ready) {
+          setAiStatus('ready');
+          setAiStatusText('AI 서버 연결됨');
+        } else if (serverStatus && !serverStatus.ready) {
+          setAiStatus('error');
+          setAiStatusText('모델 로드 실패');
+          setAiErrorMsg('AI 모델 로드에 실패했습니다. 서버 로그를 확인하세요.');
+        } else {
+          setAiStatus('ready');
+          setAiStatusText('공공 AI 모드 (서버리스)');
+        }
+      };
+      initAiStatus();
+    }
+  }, [selectedMode, currentScreen]);
 
   // ==========================================
   // 4. 리사이즈형 드로잉 캔버스 해상도 보존 복원 엔진

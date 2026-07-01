@@ -116,6 +116,10 @@ async def get_status():
     }
 
 
+# 전역 이미지 생성 뮤텍스 락 (GPU CUDA/스레드 락 및 데드락 방지용)
+generation_lock = asyncio.Lock()
+
+
 # ─────────────────────────────────────────────────────
 # HTTP API: 이미지 생성 (WebSocket이 어려운 환경용)
 # ─────────────────────────────────────────────────────
@@ -147,10 +151,11 @@ async def generate_image_http(req: GenerateRequest, request: Request):
 
     try:
         loop = asyncio.get_event_loop()
-        # 이미지 생성은 CPU/GPU 집약 작업이므로 executor에서 실행
-        image_b64 = await loop.run_in_executor(
-            None, lambda: generator.generate(prompt, num_inference_steps=steps)
-        )
+        # 이미지 생성은 CPU/GPU 집약 작업이므로 Lock을 획득하여 1개씩 순차 처리
+        async with generation_lock:
+            image_b64 = await loop.run_in_executor(
+                None, lambda: generator.generate(prompt, num_inference_steps=steps)
+            )
         
         # 만약 로컬 static 파일 경로가 리턴되었다면 절대 경로 URL로 가공
         if isinstance(image_b64, str) and image_b64.startswith("/static/"):
