@@ -302,3 +302,25 @@
   - `npx.cmd cloudflared tunnel --url http://localhost:8000` 백그라운드 태스크 기동을 통해 신규 보안 터널(`https://airport-values-die-linear.trycloudflare.com`) 개방 완료.
   - 기존 로컬 `.env` 에 기록되어 있던 `AI_SERVER_URL`을 새로 발급된 Cloudflare Tunnel 도메인 주소로 갱신하여 `realtime-server` 가 해당 주소로 AI 생성을 정상 중계할 수 있게 수정 완료.
   - 구버전 localtunnel 백그라운드 태스크(`task-165`)를 종료하여 로컬 PC 시스템 네트워크 자원 확보.
+
+## 📌 16단계: AI 이미지 로컬 static 파일 서빙 전환을 통한 Vercel 전송 한도 초과 해결
+### 사용자의 지시 프롬프트 원문
+> 지금 서로 둘다 websocket 연결중이라고는 뜨는데 서로가 그린그림이 서로한테 안보여 이거 왜 이래?
+
+### 기술적 해결책 및 아키텍처 의사결정(ADR) 요약
+1. **페이로드 부피 다이어트 (Base64 -> URL)**: 이미지 생성 성공 시 돌려주던 수백 KB ~ 수 MB 크기의 Base64 문자열 데이터를 배제하고, AI 백엔드의 로컬 폴더(`frontend/static_images/`)에 물리 파일로 저장한 뒤 URL 주소만 리턴하도록 구조를 최적화.
+2. **Vercel 및 DB 페이로드 제약 회피**: 단 70바이트 내외의 경량화된 URL 문자열만 DB(`game_rooms` 테이블)에 저장 및 갱신되므로, Vercel의 서버리스 바디 크기 제한(HTTP 413 Payload Too Large) 및 Neon DB의 String 크기 제약을 우회하여 비출제자들의 폴링 렌더링을 완벽 보장.
+3. **무중단 백엔드 배포**: 프론트엔드(`app/page.js`) 코드를 수정하지 않고 오직 파이썬 백엔드 코드(`main.py`, `image_generator.py`)의 가공 포맷만 보완했으므로, 사용자의 Vercel 재배포나 프론트 빌드 절차를 아예 생략하고 즉시 연동 가능한 호환성 실현.
+
+---
+## 🕒 작업 변경 이력 (Changelog)
+
+### 🕒 2026-07-01 16:15 - AI 생성 이미지 로컬 호스팅 및 URL 서빙 패치 완료
+- **변경 목적**: Vercel의 용량 제한으로 인해 DB의 `ai_image_url` 컬럼이 갱신되지 못해 플레이어 간 이미지가 서로 연동되지 않던 문제 해결
+- **수정/추가된 파일**:
+  - [image_generator.py](file:///c:/MiniProject/miniproject/model/TEST/backend/image_generator.py) (수정)
+  - [main.py](file:///c:/MiniProject/miniproject/model/TEST/backend/main.py) (수정)
+- **세부 변경점**:
+  - `image_generator.py`에 생성된 PIL 이미지를 로컬 `frontend/static_images` 디렉토리에 고유 식별자(UUID) 파일명으로 즉시 저장하고 상대 경로(`/static/static_images/gen_xxx.png`)를 반환하는 루틴 구축.
+  - `main.py`에 HTTP POST(`generate_image_http`) 및 WebSocket(`do_generate`) 요청 수신 시, Request 객체의 Headers(`x-forwarded-proto`, `host`)를 실시간 분석하여 공인 Cloudflare Tunnel 주소가 적용된 절대 URL 링크로 가공 후 리턴하는 가공 로직 보완.
+  - 신규 로컬 백엔드 실행을 위해 기존 AI 백엔드 태스크(`task-163`)를 파괴하고 새 파이썬 바이너리 프로세스(`task-328`)로 무중단 재기동 완료.

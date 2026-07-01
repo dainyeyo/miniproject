@@ -16,7 +16,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -125,7 +125,7 @@ class GenerateRequest(BaseModel):
 
 
 @app.post("/api/generate")
-async def generate_image_http(req: GenerateRequest):
+async def generate_image_http(req: GenerateRequest, request: Request):
     """
     HTTP POST 방식으로 이미지를 생성합니다.
     WebSocket을 사용할 수 없는 환경에서 대안으로 사용하세요.
@@ -151,6 +151,13 @@ async def generate_image_http(req: GenerateRequest):
         image_b64 = await loop.run_in_executor(
             None, lambda: generator.generate(prompt, num_inference_steps=steps)
         )
+        
+        # 만약 로컬 static 파일 경로가 리턴되었다면 절대 경로 URL로 가공
+        if isinstance(image_b64, str) and image_b64.startswith("/static/"):
+            proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+            host = request.headers.get("host", request.url.netloc)
+            image_b64 = f"{proto}://{host}{image_b64}"
+            
         return {"success": True, "image": image_b64, "prompt": prompt}
     except Exception as e:
         logger.error(f"이미지 생성 오류: {e}", exc_info=True)
@@ -216,6 +223,14 @@ async def websocket_generate(websocket: WebSocket):
                     image_b64 = await loop.run_in_executor(
                         None, lambda: generator.generate(p, num_inference_steps=s)
                     )
+                    
+                    # 만약 로컬 static 파일 경로가 리턴되었다면 절대 경로 URL로 가공
+                    if isinstance(image_b64, str) and image_b64.startswith("/static/"):
+                        proto = websocket.headers.get("x-forwarded-proto", "https")
+                        host = websocket.headers.get("host", str(websocket.url.netloc))
+                        proto = "https" if proto in ["wss", "https"] else "http"
+                        image_b64 = f"{proto}://{host}{image_b64}"
+                        
                     await websocket.send_json(
                         {"status": "done", "image": image_b64, "prompt": p}
                     )
