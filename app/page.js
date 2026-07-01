@@ -13,8 +13,8 @@ export default function GamePage() {
   // AI Image Generator Configuration & State
   // ==========================================
   const AI_CONFIG = {
-    WS_URL:          'ws://localhost:8000/ws/generate',
-    API_BASE:        'http://localhost:8000',
+    WS_URL:          process.env.NEXT_PUBLIC_AI_WS_URL || 'ws://localhost:8000/ws/generate',
+    API_BASE:        process.env.NEXT_PUBLIC_AI_API_BASE || 'http://localhost:8000',
     DEBOUNCE_MS:     700,      // 입력 후 대기 시간 (ms)
     WS_RECONNECT_MS: 3000,    // WebSocket 재연결 간격 (ms)
     MAX_RECONNECT:   5,        // 최대 재연결 시도 횟수

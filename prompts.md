@@ -220,11 +220,47 @@
 - **세부 변경점**:
   - `model/TEST` 내부 `venv311` 가상환경 생성 및 pip 최신화.
   - CUDA 12.8 대응 PyTorch, torchvision, torchaudio 휠 패키지 및 FastAPI 런타임 패키지 적재.
-  - `requirements.txt`에 누락된 번역 의존 모듈 `deep-translator` 추가 설정.
   - 가상환경 내에 `deep-translator` 강제 설치 후 FastAPI Uvicorn 백그라운드 서버 재가동 및 GPU 바인딩(status `cuda`) 완료.
 
+## 📌 12단계: 로컬 런타임 충돌 우회를 위한 Node.js 기반 실시간 웹소켓 서버 아키텍처 전환
+### 사용자의 지시 프롬프트 원문
+> 승인
 
+### 기술적 해결책 및 아키텍처 의사결정(ADR) 요약
+1. **Cloudflare Workers 의존성 탈피**: Windows 환경에서 `workerd` 바이너리 실행 시의 Visual C++ Redistributable 구버전/누락 혹은 런타임 메모리 위반 크래시(Exception #0xc0000005) 현상을 해결하기 위해, Cloudflare Durable Objects 런타임 아키텍처를 순수 Node.js 아키텍처로 전면 교체.
+2. **가상 인메모리 룸 매니저 에뮬레이션**: Node.js 표준 `http` 서버 및 `ws` 라이브러리를 바인딩하고, 전역 `Map` 객체를 통해 룸 단위 상태(roomState)와 클라이언트 소켓 세션을 인메모리에 관리하여 기존 Durable Objects의 데이터 생명주기 완벽 재현.
+3. **일관된 프론트엔드 통합**: Vercel에 배포된 기존 프론트엔드 클라이언트가 기본적으로 사용하던 8787 포트 웹소켓 연결 스펙(Path: `/ws/:roomId`, Query Params)을 100% 보존하여 프론트엔드 소스코드 무수정 연동 성공.
 
+---
+## 🕒 작업 변경 이력 (Changelog)
 
+### 🕒 2026-07-01 15:02 - Node.js 기반 실시간 웹소켓 서버 전환 완료
+- **변경 목적**: Wrangler(workerd) Windows 런타임 메모리 액세스 충돌 오류를 방지하고, 로컬 환경에서 에러 없이 상시 가동 가능한 실시간 게임 동기화 서버 인프라 구축
+- **수정/추가된 파일**:
+  - [package.json](file:///c:/MiniProject/miniproject/package.json) (수정)
+  - [package.json](file:///c:/MiniProject/miniproject/realtime-server/package.json) (신규)
+  - [server.js](file:///c:/MiniProject/miniproject/realtime-server/server.js) (신규)
+- **세부 변경점**:
+  - `realtime-server/package.json` 신규 정의서 생성을 통해 `ws` 및 `dotenv` 패키지 의존성 공급.
+  - `realtime-server/server.js`에 `http` & `ws` 모듈 기반 포트 8787 웹소켓 게이트웨이 구현 및 인메모리 룸 격리 클래스 설계.
+  - 루트 `package.json` 에 `dev:realtime` 스크립트를 추가하여 `npm run dev:realtime` 명령어로 통합 기동이 가능하게 조치.
 
+## 📌 13단계: Vercel - 로컬 AI 백엔드 도메인 터널링 및 프론트엔드 환경 변수 바인딩 적용
+### 사용자의 지시 프롬프트 원문
+> 1단계부터 자세하게 다시 알려줘
+> 승인
 
+### 기술적 해결책 및 아키텍처 의사결정(ADR) 요약
+1. **유동적 AI 접속 종속성 분리**: `app/page.js`에 하드코딩되어 있던 로컬 AI 서버 주소(`localhost:8000`)를 런타임 환경변수(`NEXT_PUBLIC_AI_WS_URL`, `NEXT_PUBLIC_AI_API_BASE`) 기반으로 리팩토링하여 인프라 도메인 변경 시에도 코드 수정 없이 유연한 대처 보장.
+2. **보안 샌드박스 보안 정책 우회**: HTTPS 환경인 Vercel과 로컬 AI 서버(HTTP) 통신 시 웹 브라우저가 유발하는 Mixed Content 차단 문제를 해결하기 위해, Localtunnel/ngrok 등을 경유한 SSL 암호화된 공인 HTTPS 게이트웨이 터널 연동 아키텍처 제시.
+3. **OS 실행 정책 우회 기동 명세**: Windows PowerShell의 스크립트 실행 제한 정책(`PSSecurityException`)으로 가상환경 활성화가 거부될 경우를 대비해, 가상환경 내 격리된 파이썬 실행 파일을 수동 활성화 없이 물리적으로 직접 지목(`..\venv311\Scripts\python.exe main.py`)하여 런타임을 무사히 실행시키는 트러블슈팅 매뉴얼 수립.
+
+---
+## 🕒 작업 변경 이력 (Changelog)
+
+### 🕒 2026-07-01 15:27 - Vercel용 AI 환경 변수 바인딩 적용 완료
+- **변경 목적**: Vercel에 배포된 게임 프론트엔드가 암호화 보안 규칙(Mixed Content)을 만족하며 사용자의 고성능 로컬 GPU AI 모델을 무수정 상태로 연동 호출할 수 있도록 함.
+- **수정/추가된 파일**:
+  - [page.js](file:///c:/MiniProject/miniproject/app/page.js) (수정)
+- **세부 변경점**:
+  - `app/page.js`의 `AI_CONFIG`에서 `WS_URL`과 `API_BASE`를 `process.env.NEXT_PUBLIC_AI_WS_URL` 및 `process.env.NEXT_PUBLIC_AI_API_BASE` 환경 변수를 사용해 유동적으로 바인딩하도록 소스 코드 핫픽스 적용.

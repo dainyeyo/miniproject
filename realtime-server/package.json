@@ -1,0 +1,14 @@
+{
+  "name": "realtime-server",
+  "version": "1.0.0",
+  "description": "Node.js WebSocket Server for EGGG Game Room Synchronization",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "ws": "^8.17.0"
+  }
+}
