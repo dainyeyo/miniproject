@@ -275,7 +275,11 @@ export default function GamePage() {
     try {
       const response = await fetch(`${AI_CONFIG.API_BASE}/api/generate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'bypass-tunnel-reminder': 'true',
+          'ngrok-skip-browser-warning': 'true',
+        },
         body: JSON.stringify({ prompt, steps }),
       });
       const data = await response.json();

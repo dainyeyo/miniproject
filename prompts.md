@@ -264,3 +264,21 @@
   - [page.js](file:///c:/MiniProject/miniproject/app/page.js) (수정)
 - **세부 변경점**:
   - `app/page.js`의 `AI_CONFIG`에서 `WS_URL`과 `API_BASE`를 `process.env.NEXT_PUBLIC_AI_WS_URL` 및 `process.env.NEXT_PUBLIC_AI_API_BASE` 환경 변수를 사용해 유동적으로 바인딩하도록 소스 코드 핫픽스 적용.
+
+## 📌 14단계: 터널링 프록시 경고 화면 우회 헤더(Bypass Headers) 주입
+### 사용자의 지시 프롬프트 원문
+> 승인할게
+
+### 기술적 해결책 및 아키텍처 의사결정(ADR) 요약
+1. **터널 보안 검문소 하이패스**: 외부 플레이어가 개별적으로 도메인에 방문하여 IP 인증을 거치지 않더라도, API 비동기 통신(`fetch`) 요청 헤더에 터널링 보안 차단 우회 토큰(`bypass-tunnel-reminder`, `ngrok-skip-browser-warning`)을 함께 실어 보내게끔 설계하여 경고 웹페이지(HTML) 반환 문제를 원천 해결.
+2. **JSON 파싱 안정성 복원**: 응답 형식이 일관된 JSON 데이터로 고정되도록 강제하여 `Unexpected token '<', "<html>..." is not valid JSON` 형태의 브라우저 예외 에러를 영구적으로 제거.
+
+---
+## 🕒 작업 변경 이력 (Changelog)
+
+### 🕒 2026-07-01 15:47 - 터널링 경고 화면 우회 헤더 주입 완료
+- **변경 목적**: 외부 플레이어가 게임 룸에 접속했을 때 AI 이미지 로딩 시 발생하는 JSON 파싱 에러 방지 및 그림 미표출 문제 해결
+- **수정/추가된 파일**:
+  - [page.js](file:///c:/MiniProject/miniproject/app/page.js) (수정)
+- **세부 변경점**:
+  - `app/page.js`의 `generateAiViaHTTP` 비동기 함수 내 `fetch` 통신부 `headers` 객체에 `'bypass-tunnel-reminder': 'true'` 및 `'ngrok-skip-browser-warning': 'true'` 속성 동적 주입 완료.
