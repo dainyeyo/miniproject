@@ -282,3 +282,23 @@
   - [page.js](file:///c:/MiniProject/miniproject/app/page.js) (수정)
 - **세부 변경점**:
   - `app/page.js`의 `generateAiViaHTTP` 비동기 함수 내 `fetch` 통신부 `headers` 객체에 `'bypass-tunnel-reminder': 'true'` 및 `'ngrok-skip-browser-warning': 'true'` 속성 동적 주입 완료.
+
+## 📌 15단계: Cloudflare Tunnel(cloudflared) 도입을 통한 프록시 보안 배리어 완전 제거
+### 사용자의 지시 프롬프트 원문
+> cloudflare Tunnel 도입하는거 해보고 싶은데 이거 해줘
+
+### 기술적 해결책 및 아키텍처 의사결정(ADR) 요약
+1. **임시 터널링 도구 교체**: 경고 안내 웹페이지(HTML 배너)를 표시하여 잦은 통신 차단을 일으키던 Localtunnel/ngrok을 걷어내고, 보안 인증 스크린이 전혀 존재하지 않는 Cloudflare 공식 터널 솔루션(`cloudflared`)으로 전면 전환.
+2. **무중단 인프라 포트 포워딩**: 로컬 8000번 포트의 AI 서버를 `trycloudflare.com` 공인 도메인과 1:1 매핑하여 외부 클라이언트(Vercel) 및 로컬 중계 서버(realtime-server)가 혼합 콘텐츠 차단(Mixed Content) 및 CORS 이슈 없이 통신할 수 있도록 조치.
+
+---
+## 🕒 작업 변경 이력 (Changelog)
+
+### 🕒 2026-07-01 16:05 - Cloudflare Tunnel 도입 및 실시간 서버 동기화 완료
+- **변경 목적**: 외부 참가자 접속 시 어떠한 중간 확인 배너 없이 다이렉트로 안전하게 로컬 GPU AI API 데이터(JSON)를 전파하기 위해 터널링 서버 인프라 최신화 적용
+- **수정/추가된 파일**:
+  - [.env](file:///c:/MiniProject/miniproject/.env) (수정)
+- **세부 변경점**:
+  - `npx.cmd cloudflared tunnel --url http://localhost:8000` 백그라운드 태스크 기동을 통해 신규 보안 터널(`https://airport-values-die-linear.trycloudflare.com`) 개방 완료.
+  - 기존 로컬 `.env` 에 기록되어 있던 `AI_SERVER_URL`을 새로 발급된 Cloudflare Tunnel 도메인 주소로 갱신하여 `realtime-server` 가 해당 주소로 AI 생성을 정상 중계할 수 있게 수정 완료.
+  - 구버전 localtunnel 백그라운드 태스크(`task-165`)를 종료하여 로컬 PC 시스템 네트워크 자원 확보.
