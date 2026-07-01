@@ -14,12 +14,69 @@ import base64
 import logging
 import time
 import re
+import urllib.request
+import uuid
 
 import torch
 from PIL import Image
 from deep_translator import GoogleTranslator
 
 logger = logging.getLogger(__name__)
+
+
+# ─────────────────────────────────────────
+# 헬퍼 함수: Catbox.moe 이미지 업로드
+# ─────────────────────────────────────────
+def upload_to_catbox(image: Image.Image) -> str:
+    """Catbox.moe에 이미지를 업로드하고 영구 이미지 URL을 반환합니다. 실패 시 None을 반환합니다."""
+    try:
+        # 이미지를 바이너리로 저장
+        img_byte_arr = io.BytesIO()
+        image.save(img_byte_arr, format='PNG')
+        img_byte_arr.seek(0)
+        file_data = img_byte_arr.read()
+        
+        boundary = f"----WebKitFormBoundary{uuid.uuid4().hex}"
+        
+        # multipart/form-data 빌드
+        body = []
+        
+        # field: reqtype
+        body.append(f"--{boundary}".encode('utf-8'))
+        body.append(b'Content-Disposition: form-data; name="reqtype"')
+        body.append(b'')
+        body.append(b'fileupload')
+        
+        # field: fileToUpload
+        body.append(f"--{boundary}".encode('utf-8'))
+        body.append(b'Content-Disposition: form-data; name="fileToUpload"; filename="generated.png"')
+        body.append(b'Content-Type: image/png')
+        body.append(b'')
+        body.append(file_data)
+        
+        # end boundary
+        body.append(f"--{boundary}--".encode('utf-8'))
+        body.append(b'')
+        
+        data = b'\r\n'.join(body)
+        
+        req = urllib.request.Request(
+            'https://catbox.moe/user/api.php',
+            data=data,
+            headers={
+                'Content-Type': f'multipart/form-data; boundary={boundary}',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+        )
+        
+        with urllib.request.urlopen(req, timeout=10) as response:
+            res_url = response.read().decode('utf-8').strip()
+            if res_url.startswith('https://'):
+                logger.info(f"☁️ [Catbox 업로드 성공]: {res_url}")
+                return res_url
+    except Exception as e:
+        logger.error(f"⚠️ [Catbox 업로드 실패]: {e}")
+    return None
 
 
 # ─────────────────────────────────────────
@@ -165,6 +222,12 @@ class SDTurboGenerator:
         elapsed = time.time() - start
         logger.info(f"✅ 이미지 생성 완료 ({elapsed:.2f}초)")
 
+        # 1안: 이미지 공유를 위해 무료 이미지 호스팅(Catbox)에 먼저 업로드 시도
+        shared_url = upload_to_catbox(image)
+        if shared_url:
+            return shared_url
+
+        # 업로드 실패 시 폴백으로 로컬용 base64 문자열 반환
         return pil_to_base64(image)
 
     def is_gpu(self) -> bool:
