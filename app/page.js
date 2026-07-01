@@ -336,6 +336,15 @@ export default function GamePage() {
   const requestAiGenerate = (prompt) => {
     if (!prompt || aiIsGenerating) return;
 
+    // 제시어(정답)를 프롬프트에 직접 작성하는 어뷰징 행위를 차단하기 위한 정규화 필터링
+    const normalizedPrompt = prompt.replace(/\s+/g, '').toLowerCase();
+    const normalizedKeyword = currentKeyword.replace(/\s+/g, '').toLowerCase();
+    
+    if (normalizedKeyword && normalizedPrompt.includes(normalizedKeyword)) {
+      setAiErrorMsg(`프롬프트에 제시어("${currentKeyword}")를 직접 포함할 수 없습니다! 다른 방식으로 묘사해 주세요.`);
+      return;
+    }
+
     lastAiPromptRef.current = prompt;
     setAiErrorMsg('');
 
@@ -381,10 +390,8 @@ export default function GamePage() {
       console.log('로컬 AI 서버가 감지되지 않아 Pollinations.ai API로 대체합니다.');
       setAiStatus('ready');
       setAiStatusText('공공 AI 모드 (서버리스)');
-      setAiPrompt(keyword);
-      if (isAiRealtime && keyword) {
-        generateAiViaPollinations(keyword);
-      }
+      // 플레이어 자율 입력 보장을 위해 자동 프롬프트 세팅 및 즉시 자동 생성을 비활성화하고 입력창을 비웁니다.
+      setAiPrompt('');
       return;
     }
 
@@ -398,10 +405,8 @@ export default function GamePage() {
     console.log(`AI 모델 준비됨 — 디바이스: ${serverStatus.device}`);
     connectAiWebSocket();
 
-    setAiPrompt(keyword);
-    if (isAiRealtime && keyword) {
-      requestAiGenerate(keyword);
-    }
+    // 플레이어 자율 입력 보장을 위해 자동 프롬프트 세팅 및 즉시 자동 생성을 비활성화하고 입력창을 비웁니다.
+    setAiPrompt('');
   };
 
   // ==========================================
