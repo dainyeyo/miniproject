@@ -440,12 +440,7 @@ class Room {
     if (this.timerBlocker) return;
     this.timerBlocker = true;
 
-    this.broadcastToRoom({
-      type: 'chat',
-      sender: 'System',
-      message: `📢 라운드 시간이 종료되었습니다! 정답은 [${this.roomState.currentKeyword}] 이었습니다!`,
-      isSystem: true
-    });
+    // 정답 공개 메시지는 Next.js API (reveal-answer)를 통해서만 삽입 및 폴링 연동되도록 이관하고 웹소켓 직접 전송은 생략합니다.
 
     setTimeout(async () => {
       this.timerBlocker = false;
@@ -606,12 +601,7 @@ class Room {
           this.roomState.aiStatus = 'ready';
           this.roomState.aiImageUrl = responseData.image; // AI 서버가 내려준 이미지 URL 적재
           
-          this.broadcastToRoom({
-            type: 'chat',
-            sender: 'System',
-            message: `🤖 AI가 새로운 그림 "${prompt}" 생성을 완료했습니다!`,
-            isSystem: true
-          });
+          // AI 생성 성공 시 시스템 채팅 메시지 안내는 소거 처리합니다.
           
           this.broadcastToRoom({
             type: 'ai_image',

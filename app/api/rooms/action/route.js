@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import pg from 'pg';
 
+const DEFAULT_FALLBACK_WORDS = [
+  '계란 후라이', '달걀말이', '오므라이스', '닭고기', '병아리', '달걀껍질', '둥지', 
+  '사운드오브뮤직', '클래식음악', '교향곡', '피아노', '바이올린', '첼로', '트럼펫'
+];
+
 export async function POST(request) {
   const dbUrl = process.env.DATABASE_URL;
   if (!dbUrl) {
@@ -119,9 +124,9 @@ export async function POST(request) {
       case 'guess': {
         const { guess } = payload;
         
-        // 1. 방의 현재 제시어 조회
+        // 1. 방의 현재 제시어 및 진행 정보 조회
         const roomRes = await client.query(
-          'SELECT current_keyword, current_drawer_id FROM game_rooms WHERE room_code = $1',
+          'SELECT current_keyword, current_drawer_id, current_round, max_round FROM game_rooms WHERE room_code = $1',
           [normalizedCode]
         );
         if (roomRes.rows.length === 0) {
@@ -129,7 +134,7 @@ export async function POST(request) {
           return NextResponse.json({ error: '방 정보가 없습니다.' }, { status: 404 });
         }
         
-        const { current_keyword, current_drawer_id } = roomRes.rows[0];
+        const { current_keyword, current_drawer_id, current_round, max_round } = roomRes.rows[0];
         
         // 2. 정답 판단
         const normalize = (txt) => txt ? txt.toLowerCase().replace(/[^a-zA-Z0-9가-힣]/g, '') : '';
@@ -160,13 +165,75 @@ export async function POST(request) {
               [addScore, playerId]
             );
             
-            // 출제자 보너스 포인트 가산 제거됨 (그리는 사람에게 포인트 주지 않음)
-
             // 챗 로그에도 정답 알림 기록 추가 (다른 유저 피드 동기화용)
             await client.query(
               "INSERT INTO chat_messages (room_code, player_id, nickname, message, type) VALUES ($1, $2, $3, $4, 'system-msg')",
               [normalizedCode, playerId, player.nickname, `🎉 ${player.nickname}님이 정답을 맞혔습니다! (+${addScore} pts)`]
             );
+
+            // --- 전원 정답 여부 실시간 검증 및 라운드 강제 강등/종료 ---
+            // 출제자를 제외하고 활성화된(is_active = true) 플레이어 수
+            const totalGuesserRes = await client.query(
+              "SELECT COUNT(*) as count FROM players WHERE room_code = $1 AND id != $2 AND is_active = TRUE",
+              [normalizedCode, current_drawer_id]
+            );
+            const totalGuesserCount = parseInt(totalGuesserRes.rows[0].count, 10);
+
+            // 출제자를 제외하고 활성화된 플레이어 중 정답을 맞춘(status = 'correct') 플레이어 수
+            const correctGuesserRes = await client.query(
+              "SELECT COUNT(*) as count FROM players WHERE room_code = $1 AND id != $2 AND is_active = TRUE AND status = 'correct'",
+              [normalizedCode, current_drawer_id]
+            );
+            const correctGuesserCount = parseInt(correctGuesserRes.rows[0].count, 10);
+
+            if (totalGuesserCount > 0 && correctGuesserCount === totalGuesserCount) {
+              await client.query(
+                "INSERT INTO chat_messages (room_code, player_id, nickname, message, type) VALUES ($1, 'system', 'System', '⚡ 모든 참여자가 정답을 맞혔습니다! 다음 라운드로 이동합니다.', 'system-msg')"
+              );
+
+              if (current_round < max_round) {
+                // 1) 다음 라운드 처리 진행
+                let nextKeyword = '계란 후라이';
+                try {
+                  const wordRes = await client.query('SELECT word FROM word_list ORDER BY RANDOM() LIMIT 1');
+                  if (wordRes.rows.length > 0) {
+                    nextKeyword = wordRes.rows[0].word;
+                  } else {
+                    const fallbackShuffled = [...DEFAULT_FALLBACK_WORDS].sort(() => 0.5 - Math.random());
+                    nextKeyword = fallbackShuffled[0];
+                  }
+                } catch (e) {
+                  const fallbackShuffled = [...DEFAULT_FALLBACK_WORDS].sort(() => 0.5 - Math.random());
+                  nextKeyword = fallbackShuffled[0];
+                }
+
+                const nextRound = current_round + 1;
+                // 다음 라운드 출제자 결정
+                const playersRes = await client.query('SELECT id FROM players WHERE room_code = $1 ORDER BY nickname ASC', [normalizedCode]);
+                const playerIds = playersRes.rows.map(p => p.id);
+                const drawerIndex = (nextRound - 1) % playerIds.length;
+                const drawerId = playerIds[drawerIndex];
+
+                await client.query(
+                  'UPDATE game_rooms SET current_round = $1, current_keyword = $2, current_drawer_id = $3, canvas_data = $4, ai_image_url = $5 WHERE room_code = $6',
+                  [nextRound, nextKeyword, drawerId, '', '', normalizedCode]
+                );
+
+                await client.query(
+                  "UPDATE players SET status = CASE WHEN id = $1 THEN 'drawing' ELSE 'ready' END WHERE room_code = $2",
+                  [drawerId, normalizedCode]
+                );
+              } else {
+                // 2) 게임 오버 처리
+                await client.query(
+                  "UPDATE game_rooms SET status = 'result' WHERE room_code = $1",
+                  [normalizedCode]
+                );
+                await client.query(
+                  "INSERT INTO chat_messages (room_code, player_id, nickname, message, type) VALUES ($1, 'system', 'System', '🏆 게임이 완전히 끝났습니다! 최종 스코어가 기록됩니다.', 'system-msg')"
+                );
+              }
+            }
             
             await client.query('COMMIT');
           }

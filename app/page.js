@@ -239,7 +239,6 @@ export default function GamePage() {
         if (data.image) {
           setAiImageSrc(data.image);
           setAiImageMeta(`"${data.prompt || lastAiPromptRef.current}" — ${new Date().toLocaleTimeString('ko-KR')}`);
-          addSystemMsg(`🤖 AI가 새로운 그림 "${data.prompt || lastAiPromptRef.current}" 생성을 마쳤습니다!`);
           
           if (isDrawer) {
             fetch('/api/rooms/action', {
@@ -311,7 +310,6 @@ export default function GamePage() {
         setAiStatusText('공공 AI 모드 (서버리스)');
         setAiImageSrc(imageUrl);
         setAiImageMeta(`"${prompt}" — Pollinations.ai`);
-        addSystemMsg(`🤖 AI가 새로운 그림 "${prompt}" 생성을 마쳤습니다!`);
 
         if (isDrawer) {
           fetch('/api/rooms/action', {
@@ -576,6 +574,12 @@ export default function GamePage() {
 
         const room = data.room;
         const serverPlayers = data.players;
+
+        // [방어 코드] 방장이 대기실로 돌아가 방 상태가 waiting으로 초기화되었더라도,
+        // 결과 화면에 남아있는 게스트들은 본인이 대기실 복귀 버튼을 누르기 전까지 최종 점수판을 유지해야 한다.
+        if (currentScreen === 'screen-result' && room.status === 'waiting') {
+          return;
+        }
 
         // 1. 플레이어 목록 및 본인 권한 업데이트
         const mappedPlayers = serverPlayers.map(p => ({
