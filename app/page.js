@@ -546,9 +546,15 @@ export default function GamePage() {
         
         if (!statusRes.ok) {
           clearInterval(pollInterval);
-          alert(data.error || '방에서 퇴장되었거나 존재하지 않는 방입니다.');
+          if (statusRes.status === 403 && data.kicked) {
+            alert('강퇴 당하였습니다.');
+          } else {
+            alert(data.error || '방에서 퇴장되었거나 존재하지 않는 방입니다.');
+          }
           cleanupAiGenerator();
           setCurrentScreen('screen-landing');
+          setRoomCode('');
+          setPlayerId('');
           return;
         }
 
@@ -583,15 +589,24 @@ export default function GamePage() {
         }
 
         // 1. 플레이어 목록 및 본인 권한 업데이트
-        const mappedPlayers = serverPlayers.map(p => ({
-          name: p.nickname,
-          avatar: p.avatar,
-          score: p.score,
-          isMe: p.id === playerId,
-          isOwner: p.is_host,
-          status: p.status === 'drawing' ? '그리는 중' : p.status === 'correct' ? '정답!' : '대기중',
-          id: p.id
-        }));
+        const mappedPlayers = serverPlayers.map(p => {
+          let displayStatus = '대기중';
+          if (room.status === 'waiting') {
+            displayStatus = p.is_host ? '방장' : p.status === 'ready' ? '준비완료' : '준비중';
+          } else {
+            displayStatus = p.status === 'drawing' ? '그리는 중' : p.status === 'correct' ? '정답!' : '대기중';
+          }
+          return {
+            name: p.nickname,
+            avatar: p.avatar,
+            score: p.score,
+            isMe: p.id === playerId,
+            isOwner: p.is_host,
+            status: displayStatus,
+            rawStatus: p.status, // 백엔드 로우 상태 보존
+            id: p.id
+          };
+        });
         setPlayers(mappedPlayers);
 
         const me = serverPlayers.find(p => p.id === playerId);
@@ -1013,6 +1028,52 @@ export default function GamePage() {
     }
   };
 
+  // 플레이어 강퇴 핸들러
+  const kickPlayer = async (targetPlayerId, targetNickname) => {
+    if (!confirm(`${targetNickname}님을 정말로 강퇴하시겠습니까?`)) return;
+    try {
+      const res = await fetch('/api/rooms/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomCode,
+          playerId,
+          action: 'kick-player',
+          payload: { targetPlayerId }
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || '강퇴 처리에 실패했습니다.');
+      }
+    } catch (err) {
+      console.error('Failed to kick player:', err);
+      alert('서버와 통신할 수 없습니다.');
+    }
+  };
+
+  // 준비 상태 토글 핸들러
+  const toggleReady = async () => {
+    try {
+      const res = await fetch('/api/rooms/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomCode,
+          playerId,
+          action: 'toggle-ready'
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || '준비 상태 변경에 실패했습니다.');
+      }
+    } catch (err) {
+      console.error('Failed to toggle ready status:', err);
+      alert('서버와 통신할 수 없습니다.');
+    }
+  };
+
   // ==========================================
   // 8. 클라이언트 채팅 메시지 송신 & 정답 매칭
   // ==========================================
@@ -1283,11 +1344,26 @@ export default function GamePage() {
                 <h3 className="section-title">참여자 ({players.length} / 6명)</h3>
                 <div className="player-slots-list">
                   {players.map((p, idx) => (
-                    <div key={idx} className={`lobby-player-slot ${p.isMe ? 'is-me' : ''}`}>
+                    <div key={idx} className={`lobby-player-slot ${p.isMe ? 'is-me' : ''} ${p.rawStatus === 'ready' && !p.isOwner ? 'is-ready' : ''}`}>
                       <div className="slot-avatar">{p.avatar}</div>
                       <div className="slot-name-wrapper">
                         <span className="slot-name">{p.isMe ? `${nickname} (나)` : p.name}</span>
-                        {p.isOwner && <span className="slot-badge">방장</span>}
+                        {p.isOwner ? (
+                          <span className="slot-badge host-badge">방장</span>
+                        ) : (
+                          <span className={`slot-badge ready-badge ${p.rawStatus === 'ready' ? 'ready-ok' : 'ready-wait'}`}>
+                            {p.status}
+                          </span>
+                        )}
+                        {isHost && !p.isMe && (
+                          <button
+                            className="kick-player-btn"
+                            onClick={() => kickPlayer(p.id, p.name)}
+                            title="강퇴하기"
+                          >
+                            강퇴
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -1380,27 +1456,68 @@ export default function GamePage() {
               </section>
             </div>
 
-            <footer className="waiting-room-footer">
-              <button className="btn-secondary" onClick={() => setCurrentScreen('screen-landing')}>
-                ◀ 뒤로 (Lobby)
-              </button>
-              <div className="footer-actions-right">
-                {isHost ? (
-                  <>
-                    <button className="btn-secondary btn-bounce" onClick={inviteBot}>
-                      ➕ 초대하기 (봇 추가)
-                    </button>
-                    <button className="btn-primary btn-bounce" onClick={startGame}>
-                      ▶ 게임 시작 (Start)
-                    </button>
-                  </>
-                ) : (
-                  <span style={{ fontSize: '0.95rem', color: 'var(--color-gray-dark)', fontWeight: 700, alignSelf: 'center', marginRight: '10px' }}>
-                    방장이 게임을 시작하기를 기다리는 중... ⏳
-                  </span>
-                )}
-              </div>
-            </footer>
+            {(() => {
+              const guestPlayers = players.filter(p => !p.isOwner);
+              const isAllReady = guestPlayers.length === 0 || guestPlayers.every(p => p.rawStatus === 'ready');
+              const myPlayerObj = players.find(p => p.isMe);
+              const myReadyStatus = myPlayerObj ? myPlayerObj.rawStatus : 'waiting';
+              return (
+                <footer className="waiting-room-footer">
+                  <button className="btn-secondary" onClick={() => setCurrentScreen('screen-landing')}>
+                    ◀ 뒤로 (Lobby)
+                  </button>
+                  <div className="footer-actions-right" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
+                    {isHost ? (
+                      <>
+                        <div style={{ display: 'flex', gap: '10px' }}>
+                          <button className="btn-secondary btn-bounce" onClick={inviteBot}>
+                            ➕ 초대하기 (봇 추가)
+                          </button>
+                          <button 
+                            className="btn-primary btn-bounce" 
+                            onClick={startGame}
+                            disabled={!isAllReady}
+                            style={{
+                              opacity: isAllReady ? 1 : 0.5,
+                              cursor: isAllReady ? 'pointer' : 'not-allowed',
+                              backgroundColor: isAllReady ? 'var(--color-primary)' : 'var(--color-gray-dark)'
+                            }}
+                          >
+                            ▶ 게임 시작 (Start)
+                          </button>
+                        </div>
+                        {!isAllReady && (
+                          <span style={{ fontSize: '0.78rem', color: 'var(--color-danger)', fontWeight: 800, marginTop: '2px' }}>
+                            ⚠️ 모든 참가자가 준비를 완료해야 시작할 수 있습니다.
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <button 
+                          className="btn-bounce"
+                          onClick={toggleReady}
+                          style={{
+                            backgroundColor: myReadyStatus === 'ready' ? 'var(--color-danger)' : 'var(--color-success)',
+                            color: 'white',
+                            padding: '10px 20px',
+                            fontSize: '0.9rem',
+                            boxShadow: 'var(--shadow-flat)',
+                            borderRadius: '12px',
+                            border: '3px solid var(--color-border)'
+                          }}
+                        >
+                          {myReadyStatus === 'ready' ? '❌ 준비 취소' : '✅ 준비 완료'}
+                        </button>
+                        <span style={{ fontSize: '0.95rem', color: 'var(--color-gray-dark)', fontWeight: 700 }}>
+                          방장이 게임을 시작하기를 기다리는 중... ⏳
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </footer>
+              );
+            })()}
 
           </div>
         </main>

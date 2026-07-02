@@ -486,3 +486,55 @@
   - `status/route.js`에서 비활성 유저 퇴장 및 방장 위임, 방 폭파 여부 검증 쿼리 시 봇을 검사 대상에서 일괄 예외 처리.
   - `action/route.js`에서 봇 추가(invite-bot) 로직을 개발하고, 게임 시작 및 라운드 전환 쿼리에서 출제자로 봇이 선정되지 않도록 보완.
   - `app/page.js`에서 봇 추가 시 `invite-bot` API를 쏘고, `triggerBotGameplay`에서 방장 브라우저 대행으로 봇의 채팅 및 정답 텍스트를 백엔드로 중계하도록 리팩토링.
+
+## 📌 24단계: 대기실 내 방장 권한 강퇴 기능 및 알림 시스템 구현
+### 사용자의 지시 프롬프트 원문
+> 대기실에서 방장이 다른 플레이어들 강퇴하는 기능 생겼으면 좋겠어 강퇴 당한 플레이어는 강퇴 당하였습니다 알림창이 뜨게 해줘
+
+### 기술적 해결책 및 아키텍처 의사결정(ADR) 요약
+1. **방장용 강퇴 UI 조건부 렌더링**: 대기실 플레이어 카드 렌더링 영역(`.lobby-player-slot`)에서 현재 사용자가 방장(`isHost === true`)이고 본인이 아닌 타인 플레이어 카드일 경우 강퇴 버튼(`.kick-player-btn`)을 활성화합니다.
+2. **강퇴 트랜잭션 및 알림 발송 (Action API)**: `/api/rooms/action` 에 `kick-player` 액션을 신설하고 요청자가 방장인지 검증한 후, 대상 플레이어가 봇일 경우 물리적 삭제(`DELETE`), 유저일 경우 논리적 강퇴 상태(`status = 'kicked'`, `is_active = FALSE`)로 DB를 업데이트하고 퇴장 알림 시스템 메시지를 기록합니다.
+3. **강퇴 자원 정리 및 상태 전파 (Status API)**: `/api/rooms/status` 호출 시, `playerId`가 강퇴당한 유저(`status = 'kicked'`)인 경우 자원 누수 방지를 위해 DB에서 해당 유저를 완전히 `DELETE` 하고, HTTP 403 status와 함께 `kicked: true` JSON 응답을 반환합니다.
+4. **클라이언트 예외 처리 및 화면 리디렉션**: 프론트엔드 폴링 에러 분기에서 HTTP status가 403이면서 `kicked === true` 인 경우 폴링 루프를 `clearInterval` 하고 `"강퇴 당하였습니다"` alert를 표시한 뒤 상태값을 리셋하여 로비(`screen-landing`)로 세션을 퇴장시킵니다.
+
+## 📌 25단계: 대기실 내 플레이어 준비 시스템 및 방장 시작 조건 강제 구현
+### 사용자의 지시 프롬프트 원문
+> 그리고 대기방에 준비버튼을 만들어서 방장을 제외한 플레이어들이 모두 준비 버튼을 눌러야 방장이 게임시작을 할 수 있게 해줘
+
+### 기술적 해결책 및 아키텍처 의사결정(ADR) 요약
+1. **게스트 초기 준비 상태 설정 (Join API)**: 신규 플레이어가 방에 참가할 때(`join` API) 기본 `status`를 `'waiting'`으로 설정하여 입장 즉시 준비 완료로 오인되는 문제를 차단합니다.
+2. **준비 상태 토글 분기 및 대기실 리셋 (Action API)**: `/api/rooms/action` 에 `toggle-ready` 액션을 추가하여 플레이어가 자신의 상태를 `'ready'`와 `'waiting'`으로 교차 토글할 수 있게 하고, `go-lobby` (결과창에서 대기실 복귀) 시 방장은 `'ready'`, 그 외 유저들은 `'waiting'`으로 리셋합니다.
+3. **대기실 동적 뱃지 렌더링 (Frontend)**: 폴링 상태 매핑 시 대기방 상태일 경우 플레이어 뱃지 디자인(`.ready-badge`)을 분기(방장: `'방장'`, 준비 완료: `'준비완료'`, 준비 중: `'준비중'`)하여 렌더링하고, 게스트용 하단 바에 준비 토글 버튼을 제공합니다.
+4. **시작 조건 강제화**: 방장을 제외한 모든 게스트(`!p.isOwner`)가 `'ready'` 상태에 도달할 때만 방장 화면의 "게임 시작" 버튼이 활성화되도록 제어하며, 비활성 시 가이드 배너를 표시합니다.
+
+---
+## 🕒 작업 변경 이력 (Changelog)
+
+### 🕒 2026-07-02 14:05 - 대기실 방장 권한 강퇴 기능 및 클라이언트 퇴장 알림 연동 완료
+- **변경 목적**: 대기실에서 방장이 원치 않는 플레이어(실제 유저 및 봇)를 강퇴시킬 수 있게 하고, 강퇴당한 유저는 알림창 팝업 후 로비로 튕기도록 처리
+- **수정/추가된 파일**:
+  - [route.js](file:///c:/MiniProject/miniproject/app/api/rooms/action/route.js) (수정)
+  - [route.js](file:///c:/MiniProject/miniproject/app/api/rooms/status/route.js) (수정)
+  - [page.js](file:///c:/MiniProject/miniproject/app/page.js) (수정)
+  - [globals.css](file:///c:/MiniProject/miniproject/app/globals.css) (수정)
+  - [prd.md](file:///c:/MiniProject/miniproject/prd.md) (신규)
+- **세부 변경점**:
+  - `action/route.js` 내에 `kick-player` 액션을 추가하여 방장 권한 검증 후 봇은 물리 삭제(`DELETE`), 유저인 경우 `status = 'kicked'` 및 `is_active = FALSE`로 상태 업데이트 후 시스템 메시지를 전파하도록 구현.
+  - `status/route.js` 내 하트비트 세션 갱신 로직 진입 전에 플레이어가 `status === 'kicked'`인지 검증하여 즉시 DB에서 삭제하고 HTTP 403 에러(`kicked: true`)를 돌려주도록 처리.
+  - `app/page.js` 내 비동기 `kickPlayer` 함수를 구성하고 대기실 UI 플레이어 카드 내에 방장 전용 강퇴 버튼을 추가. 폴링 오류 시 403 status와 `kicked: true`를 감지하면 폴링 인터벌 클리어 및 `"강퇴 당하였습니다"` alert를 띄운 후 로비(`screen-landing`) 화면으로 상태를 리셋하여 튕겨내도록 예외 처리 보완.
+  - `app/globals.css` 파일 하단에 카툰 테마에 맞추어 스타일링한 `.kick-player-btn` 속성을 추가하고, Next.js 프로덕션 빌드 성공 여부를 통해 정합성을 검증함.
+
+### 🕒 2026-07-02 14:10 - 대기실 준비 시스템 및 방장 시작 조건 강제화 연동 완료
+- **변경 목적**: 방장 이외의 게스트 유저들의 준비완료 상태에 따라 방장의 게임 시작을 조건부 제어하고 대기실에 직관적인 준비 뱃지 UI 노출
+- **수정/추가된 파일**:
+  - [route.js](file:///c:/MiniProject/miniproject/app/api/rooms/join/route.js) (수정)
+  - [route.js](file:///c:/MiniProject/miniproject/app/api/rooms/action/route.js) (수정)
+  - [page.js](file:///c:/MiniProject/miniproject/app/page.js) (수정)
+  - [globals.css](file:///c:/MiniProject/miniproject/app/globals.css) (수정)
+  - [prd.md](file:///c:/MiniProject/miniproject/prd.md) (수정)
+- **세부 변경점**:
+  - `join/route.js`에서 신규 유저가 조인할 때 초기 `status`를 `'waiting'`으로 설정하여 입장 즉시 준비상태가 되지 않도록 격리.
+  - `action/route.js`에 `toggle-ready` 액션(status를 ready와 waiting으로 교차 업데이트)을 추가하고, `go-lobby` 시 방장은 `ready`, 게스트는 `waiting`으로 분기 초기화되도록 수정.
+  - `app/page.js`에 `toggleReady` 비동기 통신을 추가하고, 폴링 루프 매핑 시 `displayStatus`와 `rawStatus`를 추출하도록 보완. UI 내에 준비 토글 버튼과 방장/준비완료/준비중 뱃지(`.ready-badge`)를 추가하였으며, 방장 시작 버튼 비활성화 및 경고 가이드를 바인딩함.
+  - `app/globals.css` 파일 하단에 카툰 테마에 매칭되는 `.ready-badge`, `.lobby-player-slot.is-ready` 배경 카드 및 버튼 호버 스타일을 구축하여 디자인 완성도를 확보함.
+

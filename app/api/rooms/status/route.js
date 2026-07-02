@@ -27,6 +27,18 @@ export async function GET(request) {
 
     // 1. 하트비트: 호출한 플레이어의 활성 시간 갱신
     if (playerId) {
+      // 강퇴 상태('kicked') 여부 검증
+      const checkKicked = await client.query(
+        'SELECT status FROM players WHERE id = $1 AND room_code = $2',
+        [playerId, normalizedCode]
+      );
+      if (checkKicked.rows.length > 0 && checkKicked.rows[0].status === 'kicked') {
+        // 클라이언트 감지 즉시 DB에서 물리 삭제하여 자원 반환
+        await client.query('DELETE FROM players WHERE id = $1 AND room_code = $2', [playerId, normalizedCode]);
+        await client.end();
+        return NextResponse.json({ kicked: true, error: '강퇴당하였습니다.' }, { status: 403 });
+      }
+
       await client.query('UPDATE players SET last_active = NOW() WHERE id = $1 AND room_code = $2', [playerId, normalizedCode]);
     }
 

@@ -382,8 +382,9 @@ export async function POST(request) {
         );
 
         // 플레이어들의 점수 및 상태 초기화
+        // 방장은 ready, 일반 참가자들은 waiting으로 설정
         await client.query(
-          "UPDATE players SET score = 0, status = 'ready' WHERE room_code = $1",
+          "UPDATE players SET score = 0, status = CASE WHEN is_host = TRUE THEN 'ready' ELSE 'waiting' END WHERE room_code = $1",
           [normalizedCode]
         );
 
@@ -391,6 +392,66 @@ export async function POST(request) {
         await client.query(
           "DELETE FROM players WHERE room_code = $1 AND is_active = FALSE",
           [normalizedCode]
+        );
+
+        await client.query('COMMIT');
+        break;
+      }
+
+      case 'toggle-ready': {
+        // 준비 상태 토글
+        await client.query(
+          "UPDATE players SET status = CASE WHEN status = 'ready' THEN 'waiting' ELSE 'ready' END WHERE id = $1 AND room_code = $2",
+          [playerId, normalizedCode]
+        );
+        break;
+      }
+
+      case 'kick-player': {
+        if (!player.is_host) {
+          await client.end();
+          return NextResponse.json({ error: '방장만 강퇴할 수 있습니다.' }, { status: 403 });
+        }
+
+        const { targetPlayerId } = payload;
+        if (!targetPlayerId) {
+          await client.end();
+          return NextResponse.json({ error: '강퇴 대상 플레이어 ID가 유효하지 않습니다.' }, { status: 400 });
+        }
+
+        // 강퇴 대상 플레이어가 해당 방에 실제로 존재하는지 확인
+        const targetCheck = await client.query(
+          'SELECT nickname FROM players WHERE id = $1 AND room_code = $2 AND is_active = TRUE',
+          [targetPlayerId, normalizedCode]
+        );
+
+        if (targetCheck.rows.length === 0) {
+          await client.end();
+          return NextResponse.json({ error: '대상 플레이어가 존재하지 않거나 이미 방을 나갔습니다.' }, { status: 404 });
+        }
+
+        const targetNickname = targetCheck.rows[0].nickname;
+
+        await client.query('BEGIN');
+
+        if (targetPlayerId.startsWith('BOT-')) {
+          // 봇인 경우: 바로 players 테이블에서 제거하여 영속성 소멸
+          await client.query(
+            'DELETE FROM players WHERE id = $1 AND room_code = $2',
+            [targetPlayerId, normalizedCode]
+          );
+        } else {
+          // 실제 유저인 경우: status = 'kicked', is_active = FALSE 처리 (이후 폴링에서 감지하도록 유도)
+          await client.query(
+            "UPDATE players SET status = 'kicked', is_active = FALSE WHERE id = $1 AND room_code = $2",
+            [targetPlayerId, normalizedCode]
+          );
+        }
+
+        // 시스템 메시지로 대기실 전체에 강퇴 소식 전파
+        await client.query(
+          "INSERT INTO chat_messages (room_code, player_id, nickname, message, type) VALUES ($1, 'system', 'System', $2, 'system-msg')",
+          [normalizedCode, `🚫 ${targetNickname}님이 방장에 의해 강퇴당했습니다.`]
         );
 
         await client.query('COMMIT');

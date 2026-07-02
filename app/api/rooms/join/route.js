@@ -42,7 +42,7 @@ export async function POST(request) {
     const playerId = crypto.randomUUID();
     await client.query(
       'INSERT INTO players (id, room_code, nickname, avatar, score, is_host, status) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-      [playerId, normalizedCode, nickname, avatar || '🐥', 0, false, 'ready']
+      [playerId, normalizedCode, nickname, avatar || '🐥', 0, false, 'waiting']
     );
 
     // 4. 입장 후 전체 플레이어 정보 리턴

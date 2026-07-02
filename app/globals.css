@@ -2255,3 +2255,64 @@ button {
   color: var(--color-gray-dark);
   margin-left: auto;
 }
+
+/* 대기실 강퇴 버튼 */
+.kick-player-btn {
+  background-color: var(--color-danger);
+  color: white;
+  border: 2px solid var(--color-border);
+  border-radius: 8px;
+  padding: 3px 10px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 2px 0 0 var(--color-border);
+  transition: all 0.15s ease-out;
+  margin-left: auto;
+}
+
+.kick-player-btn:hover {
+  background-color: #E53E3E;
+  transform: translateY(1px);
+  box-shadow: 0 1px 0 0 var(--color-border);
+}
+
+.kick-player-btn:active {
+  transform: translateY(2px);
+  box-shadow: none;
+}
+
+/* 대기방 준비완료 뱃지 및 토글 스타일 */
+.ready-badge {
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1.5px solid var(--color-border);
+  color: white;
+  text-shadow: 1px 1px 0px rgba(0,0,0,0.15);
+}
+
+.ready-badge.ready-ok {
+  background-color: var(--color-success);
+}
+
+.ready-badge.ready-wait {
+  background-color: var(--color-gray-dark);
+}
+
+/* 준비완료 상태인 플레이어 카드의 대기방 카드 스타일 효과 */
+.lobby-player-slot.is-ready {
+  background-color: #F0FDF4;
+  border-color: var(--color-success);
+  box-shadow: 0 3px 0 0 var(--color-success);
+}
+
+/* 대기방 준비완료 버튼 호버 애니메이션 */
+.btn-bounce.btn-ready-ok:hover {
+  background-color: #38A169 !important;
+}
+
+.btn-bounce.btn-ready-cancel:hover {
+  background-color: #E53E3E !important;
+}
