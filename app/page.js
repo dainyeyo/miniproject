@@ -1355,16 +1355,16 @@ export default function GamePage() {
                             {p.status}
                           </span>
                         )}
-                        {isHost && !p.isMe && (
-                          <button
-                            className="kick-player-btn"
-                            onClick={() => kickPlayer(p.id, p.name)}
-                            title="강퇴하기"
-                          >
-                            강퇴
-                          </button>
-                        )}
                       </div>
+                      {isHost && !p.isMe && (
+                        <button
+                          className="kick-player-btn-absolute"
+                          onClick={() => kickPlayer(p.id, p.name)}
+                          title="강퇴하기"
+                        >
+                          ×
+                        </button>
+                      )}
                     </div>
                   ))}
                   {Array.from({ length: 6 - players.length }).map((_, idx) => (

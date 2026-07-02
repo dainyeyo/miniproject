@@ -516,6 +516,15 @@
 2. **입장 권한 제약 피드백**: 방 상태가 대기방(`waiting`)이 아닐 경우(게임 진행 중이거나 최종 결과 화면 상태), 입장을 전면 거부하고 HTTP 400 Bad Request 에러(`error: '이미 게임이 진행 중이거나 종료된 방입니다.'`)를 즉각 전달합니다.
 3. **클라이언트 에러 시인성 렌더링**: 프론트엔드는 400 에러 메시지를 수신하면 초대 코드 입력창 하단에 예외 오류를 빨간색 텍스트로 자연스럽게 렌더링하여 중도 난입 및 어뷰징 행위를 방지합니다.
 
+## 📌 27단계: 대기실 내 강퇴 버튼 Absolute X 버튼 전환 및 UI 레이아웃 핫픽스
+### 사용자의 지시 프롬프트 원문
+> 방장 입장으로 보면 강퇴 버튼 때문에 옆에 대기중 준비완료 ui 가 깨지는데 이거 강퇴버튼을 없애고 플레이어 ui 박스 맨 오른쪽 위에 작게 x 표시로 바꿔서 해줘 다른 ui들 건들지 않게 해줘
+
+### 기술적 해결책 및 아키텍처 의사결정(ADR) 요약
+1. **Absolute 좌표 기반 강퇴 UI 재배치**: 플레이어 카드 내부의 `slot-name-wrapper` 에서 인라인 강퇴 버튼을 완전히 삭제하여 다른 인라인 요소(닉네임, 준비 뱃지 등)의 가로 영역 침범을 영구 차단합니다.
+2. **상대적 기준점 매핑 (Relative Anchor)**: `.lobby-player-slot` 카드에 `position: relative;` 를 명시적으로 주입하여 absolute 강퇴 버튼의 배치 기준점을 선언합니다.
+3. **카툰형 원형 X 뱃지 구현**: `.kick-player-btn-absolute` 를 신설하여 카드 최하단 자식 노드로 삽입하고, `position: absolute; top: 6px; right: 8px;` 및 둥근 테두리와 빨간색 배경을 지정하여 레이아웃을 깨뜨리지 않고 우측 구석에 작고 예쁘게 오버레이시킵니다.
+
 ---
 ## 🕒 작업 변경 이력 (Changelog)
 
@@ -554,4 +563,14 @@
   - [prd.md](file:///c:/MiniProject/miniproject/prd.md) (수정)
 - **세부 변경점**:
   - `join/route.js` 내 방 존재 확인 루틴 직후 `room.status !== 'waiting'` 가드 조건을 추가하여 대기실 상태가 아닐 경우 입장을 불허하고 HTTP 400 에러와 명확한 사유 메시지를 반환하도록 리팩토링 진행.
+
+### 🕒 2026-07-02 14:20 - 대기실 내 강퇴 버튼 Absolute X 버튼 전환 및 UI 레이아웃 핫픽스
+- **변경 목적**: 대기실 내 인라인 강퇴 버튼 배치로 인한 플레이어 닉네임 및 준비 뱃지 찌그러짐 현상을 absolute X 마크 배치 형태로 고쳐 레이아웃을 전면 안정화함
+- **수정/추가된 파일**:
+  - [page.js](file:///c:/MiniProject/miniproject/app/page.js) (수정)
+  - [globals.css](file:///c:/MiniProject/miniproject/app/globals.css) (수정)
+  - [prd.md](file:///c:/MiniProject/miniproject/prd.md) (수정)
+- **세부 변경점**:
+  - `app/page.js`에서 플레이어 슬롯 돔 매핑 내부 `slot-name-wrapper` 안의 인라인 강퇴 버튼을 걷어내고 카드 자식 노드 최하단에 absolute X 강퇴 버튼(`.kick-player-btn-absolute`)을 배치.
+  - `app/globals.css`에서 부모인 `.lobby-player-slot`에 `position: relative;`를 추가하여 절대 배치 기준점을 확보하고, 기존 `.kick-player-btn` 스타일을 삭제하고 `position: absolute; top: 6px; right: 8px;`와 둥근 구형 뱃지 스타일을 적용해 다른 UI 요소를 침범하지 않는 X 버튼을 핫픽스 적용.
 

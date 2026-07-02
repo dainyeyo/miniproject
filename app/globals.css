@@ -445,6 +445,7 @@ button {
 }
 
 .lobby-player-slot {
+  position: relative;
   background-color: var(--color-purple-bg);
   border: 2.5px solid var(--color-border);
   border-radius: 12px;
@@ -2257,28 +2258,35 @@ button {
 }
 
 /* 대기실 강퇴 버튼 */
-.kick-player-btn {
+.kick-player-btn-absolute {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  width: 20px;
+  height: 20px;
   background-color: var(--color-danger);
   color: white;
-  border: 2px solid var(--color-border);
-  border-radius: 8px;
-  padding: 3px 10px;
-  font-size: 0.75rem;
+  border: 1.5px solid var(--color-border);
+  border-radius: 50%;
+  font-size: 0.8rem;
   font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
-  box-shadow: 0 2px 0 0 var(--color-border);
-  transition: all 0.15s ease-out;
-  margin-left: auto;
-}
-
-.kick-player-btn:hover {
-  background-color: #E53E3E;
-  transform: translateY(1px);
   box-shadow: 0 1px 0 0 var(--color-border);
+  transition: all 0.1s ease-out;
+  padding: 0;
+  line-height: 1;
 }
 
-.kick-player-btn:active {
-  transform: translateY(2px);
+.kick-player-btn-absolute:hover {
+  background-color: #E53E3E;
+  transform: scale(1.1);
+}
+
+.kick-player-btn-absolute:active {
+  transform: scale(0.95);
   box-shadow: none;
 }
 
