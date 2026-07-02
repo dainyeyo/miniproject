@@ -24,7 +24,7 @@ export async function POST(request) {
     await client.connect();
 
     // 1. 방 존재 여부 및 상태 확인
-    const roomRes = await client.query('SELECT room_code, status FROM game_rooms WHERE room_code = $1', [normalizedCode]);
+    const roomRes = await client.query('SELECT room_code, status, max_players FROM game_rooms WHERE room_code = $1', [normalizedCode]);
     if (roomRes.rows.length === 0) {
       await client.end();
       return NextResponse.json({ error: '존재하지 않는 방입니다.' }, { status: 404 });
@@ -36,12 +36,13 @@ export async function POST(request) {
       return NextResponse.json({ error: '이미 게임이 진행 중이거나 종료된 방입니다.' }, { status: 400 });
     }
 
-    // 2. 방 최대 인원 확인 (최대 6명)
+    // 2. 방 최대 인원 확인
+    const maxPlayers = room.max_players || 6;
     const playersCountRes = await client.query('SELECT COUNT(*) FROM players WHERE room_code = $1', [normalizedCode]);
     const playerCount = parseInt(playersCountRes.rows[0].count, 10);
-    if (playerCount >= 6) {
+    if (playerCount >= maxPlayers) {
       await client.end();
-      return NextResponse.json({ error: '방이 이미 가득 찼습니다. (최대 6명)' }, { status: 400 });
+      return NextResponse.json({ error: `방이 이미 가득 찼습니다. (최대 ${maxPlayers}명)` }, { status: 400 });
     }
 
     // 3. 플레이어 등록

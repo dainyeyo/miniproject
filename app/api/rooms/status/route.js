@@ -68,7 +68,7 @@ export async function GET(request) {
 
     // 4. 방 정보 조회
     const roomRes = await client.query(
-      'SELECT room_code, status, game_mode, current_round, max_round, round_time, current_keyword, current_drawer_id, canvas_data, ai_image_url FROM game_rooms WHERE room_code = $1',
+      'SELECT room_code, status, game_mode, current_round, max_round, round_time, max_players, current_keyword, current_drawer_id, canvas_data, ai_image_url FROM game_rooms WHERE room_code = $1',
       [normalizedCode]
     );
 

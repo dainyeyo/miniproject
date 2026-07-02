@@ -8,8 +8,17 @@ const DEFAULT_FALLBACK_WORDS = [
   '사운드오브뮤직', '클래식음악', '교향곡', '피아노', '바이올린', '첼로', '트럼펫'
 ];
 
+// 화면별 배경음악 트랙 매핑 (result 화면은 재생하지 않음)
+const MUSIC_TRACK_BY_SCREEN = {
+  'screen-landing': '/sounds/Title.mp3',
+  'screen-join': '/sounds/Title.mp3',
+  'screen-waiting': '/sounds/Title.mp3',
+  'screen-game': '/sounds/ingame.mp3',
+};
+
 // 대기실 게임 규칙 설정용 커스텀 리스트 드롭다운 (기존 만화풍 UI 톤에 맞춘 펼침 목록)
-function SettingsDropdown({ label, value, displayValue, options, disabled, onSelect }) {
+// compact=true인 경우 라벨 없이 트리거+목록만 렌더링 (참여자 헤더에 인라인으로 삽입하는 용도)
+function SettingsDropdown({ label, value, displayValue, options, disabled, onSelect, compact }) {
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef(null);
 
@@ -22,32 +31,117 @@ function SettingsDropdown({ label, value, displayValue, options, disabled, onSel
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [open]);
 
+  const dropdown = (
+    <div className={`custom-dropdown-wrapper ${compact ? 'compact' : ''}`} ref={wrapperRef}>
+      <button
+        type="button"
+        className={`custom-dropdown-trigger ${open ? 'is-open' : ''}`}
+        disabled={disabled}
+        onClick={() => setOpen(o => !o)}
+      >
+        <span>{displayValue}</span>
+        <span className="custom-dropdown-arrow">▾</span>
+      </button>
+      {open && (
+        <div className="custom-dropdown-list">
+          {options.map((opt) => (
+            <div
+              key={opt.value}
+              className={`custom-dropdown-item ${opt.value === value ? 'selected' : ''}`}
+              onClick={() => { onSelect(opt.value); setOpen(false); }}
+            >
+              {opt.label}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  if (compact) return dropdown;
+
   return (
     <div className="custom-option">
       <label>{label}</label>
-      <div className="custom-dropdown-wrapper" ref={wrapperRef}>
-        <button
-          type="button"
-          className={`custom-dropdown-trigger ${open ? 'is-open' : ''}`}
-          disabled={disabled}
-          onClick={() => setOpen(o => !o)}
-        >
-          <span>{displayValue}</span>
-          <span className="custom-dropdown-arrow">▾</span>
-        </button>
-        {open && (
-          <div className="custom-dropdown-list">
-            {options.map((opt) => (
-              <div
-                key={opt.value}
-                className={`custom-dropdown-item ${opt.value === value ? 'selected' : ''}`}
-                onClick={() => { onSelect(opt.value); setOpen(false); }}
-              >
-                {opt.label}
-              </div>
-            ))}
-          </div>
-        )}
+      {dropdown}
+    </div>
+  );
+}
+
+// 사운드 설정을 여는 톱니바퀴 버튼 (첫화면/대기실/인게임 공용, 위치는 각 화면에서 배치)
+function SoundGearButton({ onClick }) {
+  return (
+    <button
+      type="button"
+      className="sound-gear-btn"
+      onClick={onClick}
+      title="사운드 설정"
+      aria-label="사운드 설정"
+    >
+      ⚙️
+    </button>
+  );
+}
+
+// 사운드 설정 창의 한 줄 (아이콘 클릭 시 완전 음소거 토글 + 슬라이더)
+function SoundSettingsRow({ label, volume, muted, onVolumeChange, onToggleMute, ariaLabel }) {
+  const isOff = muted || volume === 0;
+  const icon = isOff ? '🔇' : volume < 50 ? '🔉' : '🔊';
+
+  return (
+    <div className={`sound-modal-row ${isOff ? 'is-muted' : ''}`}>
+      <button
+        type="button"
+        className="sound-row-icon-btn"
+        onClick={onToggleMute}
+        title={isOff ? `${label} 켜기` : `${label} 끄기`}
+        aria-label={isOff ? `${label} 켜기` : `${label} 끄기`}
+      >
+        {icon}
+      </button>
+      <label>{label}</label>
+      <input
+        type="range"
+        min="0"
+        max="100"
+        value={volume}
+        onChange={(e) => onVolumeChange(Number(e.target.value))}
+        aria-label={ariaLabel}
+      />
+      <span>{volume}</span>
+    </div>
+  );
+}
+
+// 화면 중앙에 뜨는 사운드 설정 창 (배경음악 / 효과음 볼륨 조절 + 완전 음소거)
+function SoundSettingsModal({
+  musicVolume, musicMuted, onMusicVolumeChange, onToggleMusicMute,
+  sfxVolume, sfxMuted, onSfxVolumeChange, onToggleSfxMute,
+  onClose
+}) {
+  return (
+    <div className="sound-modal-overlay" onClick={onClose}>
+      <div className="sound-modal-card" onClick={(e) => e.stopPropagation()}>
+        <div className="sound-modal-header">
+          <h3>⚙️ 사운드 설정</h3>
+          <button type="button" className="sound-modal-close" onClick={onClose} aria-label="닫기">✕</button>
+        </div>
+        <SoundSettingsRow
+          label="배경음악"
+          volume={musicVolume}
+          muted={musicMuted}
+          onVolumeChange={onMusicVolumeChange}
+          onToggleMute={onToggleMusicMute}
+          ariaLabel="배경음악 볼륨"
+        />
+        <SoundSettingsRow
+          label="효과음"
+          volume={sfxVolume}
+          muted={sfxMuted}
+          onVolumeChange={onSfxVolumeChange}
+          onToggleMute={onToggleSfxMute}
+          ariaLabel="효과음 볼륨"
+        />
       </div>
     </div>
   );
@@ -82,6 +176,7 @@ export default function GamePage() {
   const [currentRound, setCurrentRound] = useState(1);
   const [maxRound, setMaxRound] = useState(5);
   const [roundTime, setRoundTime] = useState(45);
+  const [maxPlayers, setMaxPlayers] = useState(6);
   
   // 플레이어 상태
   const [myScore, setMyScore] = useState(0);
@@ -109,6 +204,13 @@ export default function GamePage() {
   const [aiErrorMsg, setAiErrorMsg] = useState('');
   const [aiIsGenerating, setAiIsGenerating] = useState(false);
 
+  // 사운드 설정 상태 (배경음악: 화면에 따라 Title.mp3 / ingame.mp3를 전환, 효과음: click.mp3)
+  const [musicVolume, setMusicVolume] = useState(50);
+  const [musicMuted, setMusicMuted] = useState(false);
+  const [sfxVolume, setSfxVolume] = useState(50);
+  const [sfxMuted, setSfxMuted] = useState(false);
+  const [showSoundSettings, setShowSoundSettings] = useState(false);
+
   // ==========================================
   // 2. React Refs 선언 (Canvas, Scroll, Bot interval)
   // ==========================================
@@ -125,6 +227,12 @@ export default function GamePage() {
   const isDrawingRef = useRef(false);
   const lastPosRef = useRef({ x: 0, y: 0 });
   const chatEndRef = useRef(null);
+
+  // 사운드 재생용 Refs: 배경음악은 하나의 오디오 엘리먼트에서 트랙만 교체해
+  // 대기실/인게임 음악이 동시에 겹쳐 들리는 문제를 원천 차단한다.
+  const musicAudioRef = useRef(null);
+  const musicTrackRef = useRef('/sounds/Title.mp3');
+  const clickAudioRef = useRef(null);
   
   // 봇 게임 루프 상태 보존용 refs
   const botGameplayTimeoutRef = useRef(null);
@@ -535,6 +643,54 @@ export default function GamePage() {
     fetchWords();
   }, []);
 
+  // 배경음악 재생 제어: 화면별로 어떤 트랙을 틀지 결정하고, 오디오 엘리먼트 하나만 사용해서
+  // 트랙을 전환한다 (엘리먼트를 분리해두면 전환 타이밍에 따라 두 곡이 겹쳐 들릴 수 있음).
+  useEffect(() => {
+    const audio = musicAudioRef.current;
+    if (!audio) return;
+    const targetTrack = MUSIC_TRACK_BY_SCREEN[currentScreen];
+
+    if (!targetTrack) {
+      audio.pause();
+      return;
+    }
+
+    if (musicTrackRef.current !== targetTrack) {
+      audio.pause();
+      audio.src = targetTrack;
+      musicTrackRef.current = targetTrack;
+    }
+
+    if (audio.paused) audio.play().catch(() => {});
+  }, [currentScreen]);
+
+  // 배경음악 볼륨 반영 (0 = 무음, 100 = 최대음량, 음소거 아이콘을 누르면 볼륨과 무관하게 무음)
+  useEffect(() => {
+    const audio = musicAudioRef.current;
+    if (!audio) return;
+    audio.volume = musicMuted ? 0 : musicVolume / 100;
+  }, [musicVolume, musicMuted]);
+
+  // 효과음(click.mp3) 볼륨 반영 (0 = 무음, 100 = 최대음량, 음소거 아이콘을 누르면 볼륨과 무관하게 무음)
+  useEffect(() => {
+    const audio = clickAudioRef.current;
+    if (!audio) return;
+    audio.volume = sfxMuted ? 0 : sfxVolume / 100;
+  }, [sfxVolume, sfxMuted]);
+
+  // 클릭 효과음 즉시 재생 + 브라우저 자동재생 정책으로 막혔던 배경음악 재개 시도
+  const playClickSound = () => {
+    const click = clickAudioRef.current;
+    if (click) {
+      click.currentTime = 0;
+      click.play().catch(() => {});
+    }
+    const music = musicAudioRef.current;
+    if (music && music.paused && MUSIC_TRACK_BY_SCREEN[currentScreen]) {
+      music.play().catch(() => {});
+    }
+  };
+
   // 캔버스 마운트 시 윈도우 리사이즈 바인딩
   useEffect(() => {
     if (currentScreen === 'screen-game' && canvasRef.current) {
@@ -666,6 +822,7 @@ export default function GamePage() {
           if (room.game_mode) setSelectedMode(room.game_mode);
           if (room.max_round) setMaxRound(room.max_round);
           if (room.round_time) setRoundTime(room.round_time);
+          if (room.max_players) setMaxPlayers(room.max_players);
         }
 
         // 2. 출제자 상태 업데이트
@@ -888,10 +1045,10 @@ export default function GamePage() {
   };
 
   // 방 설정 동기화 업데이트 API 호출 (방장용)
-  const updateRoomSettings = async (newMode, newMaxRound, newRoundTime) => {
+  const updateRoomSettings = async (newMode, newMaxRound, newRoundTime, newMaxPlayers) => {
     if (!roomCode || !playerId) return;
     try {
-      await fetch('/api/rooms/action', {
+      const res = await fetch('/api/rooms/action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -901,10 +1058,17 @@ export default function GamePage() {
           payload: {
             gameMode: newMode || selectedMode,
             maxRound: newMaxRound || maxRound,
-            roundTime: newRoundTime || roundTime
+            roundTime: newRoundTime || roundTime,
+            maxPlayers: newMaxPlayers || maxPlayers
           }
         })
       });
+      const data = await res.json();
+      if (!res.ok) {
+        // 서버에서 거부된 경우(예: 현재 인원보다 적은 최대 인원) 로컬 상태를 되돌림
+        if (newMaxPlayers) setMaxPlayers(maxPlayers);
+        alert(data.error || '설정 변경에 실패했습니다.');
+      }
     } catch (err) {
       console.error('Failed to sync settings:', err);
     }
@@ -1052,8 +1216,8 @@ export default function GamePage() {
 
   // 봇 추가 초대 핸들러
   const inviteBot = async () => {
-    if (players.length >= 6) {
-      alert('더 이상 플레이어를 초대할 수 없습니다. (최대 6명)');
+    if (players.length >= maxPlayers) {
+      alert(`더 이상 플레이어를 초대할 수 없습니다. (최대 ${maxPlayers}명)`);
       return;
     }
     try {
@@ -1257,14 +1421,35 @@ export default function GamePage() {
   // ==========================================
 
   return (
-    <div className="app-container">
-      
+    <div className="app-container" onClickCapture={playClickSound}>
+
+      {/* 사운드 재생용 오디오 엘리먼트 (화면 전환에도 끊기지 않도록 상시 마운트) */}
+      <audio ref={musicAudioRef} src="/sounds/Title.mp3" loop preload="auto" />
+      <audio ref={clickAudioRef} src="/sounds/click.mp3" preload="auto" />
+
+      {showSoundSettings && (
+        <SoundSettingsModal
+          musicVolume={musicVolume}
+          musicMuted={musicMuted}
+          onMusicVolumeChange={(val) => { setMusicVolume(val); setMusicMuted(false); }}
+          onToggleMusicMute={() => setMusicMuted(m => !m)}
+          sfxVolume={sfxVolume}
+          sfxMuted={sfxMuted}
+          onSfxVolumeChange={(val) => { setSfxVolume(val); setSfxMuted(false); }}
+          onToggleSfxMute={() => setSfxMuted(m => !m)}
+          onClose={() => setShowSoundSettings(false)}
+        />
+      )}
+
       {/* ========================================== */}
       {/* 1. LANDING SCREEN (NICKNAME ENTRY)        */}
       {/* ========================================== */}
       {currentScreen === 'screen-landing' && (
         <main id="screen-landing" className="screen-view active-view">
           <div className="lobby-card">
+            <div className="sound-gear-wrapper">
+              <SoundGearButton onClick={() => setShowSoundSettings(true)} />
+            </div>
             <header className="brand-header">
               <div className="logo-wrapper">
                 <span className="brand-logo" style={{ fontSize: '4.5rem', display: 'block', lineHeight: '120px' }}>🍳</span>
@@ -1375,22 +1560,43 @@ export default function GamePage() {
             
             <header className="waiting-room-header">
               <h2 className="lobby-logo-mini">🥚 EGGG 대기실</h2>
-              <div className="room-invite-code" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                초대 코드: <span style={{ color: 'var(--color-secondary)', fontFamily: 'var(--font-brand)', letterSpacing: '0.1em' }}>{roomCode}</span>
-                <button
-                  onClick={copyRoomCode}
-                  className="copy-code-btn"
-                  title="초대 코드 복사"
-                >
-                  📋
-                </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                <SoundGearButton onClick={() => setShowSoundSettings(true)} />
+                <div className="room-invite-code" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  초대 코드: <span style={{ color: 'var(--color-secondary)', fontFamily: 'var(--font-brand)', letterSpacing: '0.1em' }}>{roomCode}</span>
+                  <button
+                    onClick={copyRoomCode}
+                    className="copy-code-btn"
+                    title="초대 코드 복사"
+                  >
+                    📋
+                  </button>
+                </div>
               </div>
             </header>
 
             <div className="waiting-room-body">
               {/* 1열: 참여 유저 목록 */}
               <section className="waiting-players-section">
-                <h3 className="section-title">참여자 ({players.length} / 6명)</h3>
+                <div className="players-section-header">
+                  <h3 className="section-title" style={{ margin: 0 }}>참여자 ({players.length} / {maxPlayers}명)</h3>
+                  {isHost && (
+                    <SettingsDropdown
+                      compact
+                      value={maxPlayers}
+                      displayValue={`${maxPlayers}명`}
+                      options={Array.from({ length: 9 }, (_, i) => i + 2).map((n) => ({ value: n, label: `${n}명` }))}
+                      onSelect={(val) => {
+                        if (val < players.length) {
+                          alert(`현재 인원(${players.length}명)보다 적게 설정할 수 없습니다.`);
+                          return;
+                        }
+                        setMaxPlayers(val);
+                        updateRoomSettings(null, null, null, val);
+                      }}
+                    />
+                  )}
+                </div>
                 <div className="player-slots-list">
                   {players.map((p, idx) => (
                     <div key={idx} className={`lobby-player-slot ${p.isMe ? 'is-me' : ''} ${p.rawStatus === 'ready' && !p.isOwner ? 'is-ready' : ''}`}>
@@ -1416,7 +1622,7 @@ export default function GamePage() {
                       )}
                     </div>
                   ))}
-                  {Array.from({ length: 6 - players.length }).map((_, idx) => (
+                  {Array.from({ length: Math.max(0, maxPlayers - players.length) }).map((_, idx) => (
                     <div key={idx} className="lobby-player-slot is-empty">
                       <div className="slot-avatar">?</div>
                       <div className="slot-name-wrapper">
@@ -1448,7 +1654,7 @@ export default function GamePage() {
                       boxShadow: selectedMode === 'human' ? '0 4px 0 0 var(--color-primary)' : 'none'
                     }}
                   >
-                    <h4 style={{ margin: '0 0 6px 0', fontSize: '0.95rem' }}>🎨 일반 모드 (바닐라 드로잉)</h4>
+                    <h4 style={{ margin: '0 0 6px 0', fontSize: '0.95rem' }}>🎨 일반 모드</h4>
                     <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--color-gray-dark)', lineHeight: '1.4' }}>참가자들이 직접 캔버스에 마우스나 터치로 그림을 그리고, 다른 플레이어가 정답을 맞추는 클래식 모드입니다.</p>
                   </div>
                   <div 
@@ -1593,7 +1799,7 @@ export default function GamePage() {
             </div>
 
             <div className="topbar-right">
-              {/* 타이머가 드로잉 박스 내부로 이동됨 */}
+              <SoundGearButton onClick={() => setShowSoundSettings(true)} />
             </div>
           </header>
 

@@ -72,10 +72,30 @@ export async function POST(request) {
           return NextResponse.json({ error: '방장만 방 설정을 변경할 수 있습니다.' }, { status: 403 });
         }
 
-        const { gameMode, maxRound, roundTime } = payload;
+        const { gameMode, maxRound, roundTime, maxPlayers } = payload;
+
+        if (maxPlayers) {
+          // 허용 범위(2~10명) 검증
+          if (maxPlayers < 2 || maxPlayers > 10) {
+            await client.end();
+            return NextResponse.json({ error: '최대 인원은 2명 이상 10명 이하로 설정할 수 있습니다.' }, { status: 400 });
+          }
+
+          // 현재 접속 중인 인원보다 적은 값으로는 낮출 수 없음
+          const activeCountRes = await client.query(
+            "SELECT COUNT(*) as count FROM players WHERE room_code = $1 AND is_active = TRUE",
+            [normalizedCode]
+          );
+          const activeCount = parseInt(activeCountRes.rows[0].count, 10);
+          if (maxPlayers < activeCount) {
+            await client.end();
+            return NextResponse.json({ error: `현재 인원(${activeCount}명)보다 적게 설정할 수 없습니다.` }, { status: 400 });
+          }
+        }
+
         await client.query(
-          'UPDATE game_rooms SET game_mode = COALESCE($1, game_mode), max_round = COALESCE($2, max_round), round_time = COALESCE($3, round_time) WHERE room_code = $4',
-          [gameMode, maxRound, roundTime, normalizedCode]
+          'UPDATE game_rooms SET game_mode = COALESCE($1, game_mode), max_round = COALESCE($2, max_round), round_time = COALESCE($3, round_time), max_players = COALESCE($4, max_players) WHERE room_code = $5',
+          [gameMode, maxRound, roundTime, maxPlayers, normalizedCode]
         );
         break;
       }
@@ -86,15 +106,21 @@ export async function POST(request) {
           return NextResponse.json({ error: '방장만 봇을 초대할 수 있습니다.' }, { status: 403 });
         }
 
-        // 1. 현재 대기실 인원 수 확인
+        // 1. 현재 대기실 인원 수 및 방 최대 인원 확인
+        const roomLimitRes = await client.query(
+          'SELECT max_players FROM game_rooms WHERE room_code = $1',
+          [normalizedCode]
+        );
+        const maxPlayersLimit = roomLimitRes.rows[0]?.max_players || 6;
+
         const countRes = await client.query(
           "SELECT COUNT(*) as count FROM players WHERE room_code = $1 AND is_active = TRUE",
           [normalizedCode]
         );
         const playerCount = parseInt(countRes.rows[0].count, 10);
-        if (playerCount >= 6) {
+        if (playerCount >= maxPlayersLimit) {
           await client.end();
-          return NextResponse.json({ error: '더 이상 플레이어를 초대할 수 없습니다. (최대 6명)' }, { status: 400 });
+          return NextResponse.json({ error: `더 이상 플레이어를 초대할 수 없습니다. (최대 ${maxPlayersLimit}명)` }, { status: 400 });
         }
 
         // 2. 현재 방에 초대되어 있는 플레이어들의 닉네임 파악
