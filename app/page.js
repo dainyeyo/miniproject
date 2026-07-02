@@ -1419,7 +1419,7 @@ export default function GamePage() {
                       boxShadow: selectedMode === 'ai' ? '0 4px 0 0 var(--color-secondary)' : 'none'
                     }}
                   >
-                    <h4 style={{ margin: '0 0 6px 0', fontSize: '0.95rem' }}>⚡ AI 드로잉 모드 (SD-Turbo 연동)</h4>
+                    <h4 style={{ margin: '0 0 6px 0', fontSize: '0.95rem' }}>⚡ AI 드로잉 모드</h4>
                     <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--color-gray-dark)', lineHeight: '1.4' }}>실시간 AI 이미지 생성을 활용하여 프롬프트를 입력하면 AI가 실시간으로 그림을 그려내는 모드입니다.</p>
                   </div>
                 </div>

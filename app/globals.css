@@ -439,8 +439,9 @@ button {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 480px;
+  max-height: 520px;
   overflow-y: auto;
+  overflow-x: hidden;
   padding-right: 4px;
 }
 
