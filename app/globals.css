@@ -2260,8 +2260,8 @@ button {
 /* 대기실 강퇴 버튼 */
 .kick-player-btn-absolute {
   position: absolute;
-  top: 6px;
-  right: 8px;
+  top: -10px;
+  right: -10px;
   width: 20px;
   height: 20px;
   background-color: var(--color-danger);

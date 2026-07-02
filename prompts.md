@@ -525,6 +525,35 @@
 2. **상대적 기준점 매핑 (Relative Anchor)**: `.lobby-player-slot` 카드에 `position: relative;` 를 명시적으로 주입하여 absolute 강퇴 버튼의 배치 기준점을 선언합니다.
 3. **카툰형 원형 X 뱃지 구현**: `.kick-player-btn-absolute` 를 신설하여 카드 최하단 자식 노드로 삽입하고, `position: absolute; top: 6px; right: 8px;` 및 둥근 테두리와 빨간색 배경을 지정하여 레이아웃을 깨뜨리지 않고 우측 구석에 작고 예쁘게 오버레이시킵니다.
 
+## 📌 28단계: 대기실 내 강퇴 버튼 모서리 걸침 음수 오프셋 핫픽스 적용
+### 사용자의 지시 프롬프트 원문
+> X 표시를 최상단 오른쪽으로 모서리에 살짝 걸치게로 옮겨줘
+
+### 기술적 해결책 및 아키텍처 의사결정(ADR) 요약
+1. **음수 오프셋 좌표 보정 (Negative Absolute Coordinates)**: `.kick-player-btn-absolute` 클래스의 `top` 과 `right` 값을 각각 `top: -10px; right: -10px;` 와 같은 음수 수치로 오프셋 이동시킵니다.
+2. **경계 꼭짓점 오버레이 (Corner Border Overlay)**: 강퇴용 빨간 원형 X 버튼이 부모 플레이어 카드의 모서리 경계 테두리에 걸치도록 배치하여 닉네임과 준비중 상태 뱃지 공간을 가로막지 않고 입체적이고 깔끔한 디자인을 실현합니다.
+
+## 📌 29단계: 봇 이름 고유화 및 (봇) 식별 서픽스 강제 주입 구현
+### 사용자의 지시 프롬프트 원문
+> 그리고 봇 추가 했을때 봇들의 이름이 다 다르게 해주고 이름 옆에 (봇) 이렇게 표시해줘 사람이랑 헷갈리지 않게 하고 싶어
+
+### 기술적 해결책 및 아키텍처 의사결정(ADR) 요약
+1. **백엔드 BOT_POOL 식별자 선언**: `/api/rooms/action` 의 `invite-bot` 액션 내부 `BOT_POOL` 상수의 모든 봇 `name`에 ` (봇)` 식별 서픽스를 강제 부여합니다. (예: `노랑병아리 (봇)`)
+2. **중복 검사(Anti-collision) 완결성**: ` (봇)` 서픽스가 통합된 형태로 DB 닉네임 유무를 체크하므로 중복 체크(`activeNicknames.includes(bp.name)`)가 의도대로 오동작 없이 기동해 매번 다른 봇들이 순차적으로 추가됩니다.
+3. **프론트엔드 동기화**: `app/page.js` 내부의 정적 백업 `botPool` 상수명도 동일하게 `(봇)` 서픽스를 추가해 설계 일치성을 유지합니다.
+4. **점진적 상태 전파**: 닉네임 자체에 식별 서픽스가 내재되므로 추가적인 프론트엔드 조건 처리 없이도 점수판, 채팅 피드, 알림 팝업 등 전체 UI 영역에 식별 표시가 자연스럽게 동기화 전파됩니다.
+
+## 📌 30단계: 게임 종료 시 최고 득점자 방장 승격 및 위임 시스템 구현
+### 사용자의 지시 프롬프트 원문
+> 그리고 라운드가 다끝나고 점수가 제일 높은사람을 방장으로 바꾸는 시스템을 추가해줘
+
+### 기술적 해결책 및 아키텍처 의사결정(ADR) 요약
+1. **최고 득점자 선출 로직 구현**: `action/route.js`에 최고 득점 유저를 선별하는 비동기 헬퍼 함수 `assignNewHostByScore`를 설계합니다. 봇을 방장 승격에서 배제하기 위해 `id NOT LIKE 'BOT-%'` 필터와 현재 접속 중인 활성 휴먼 유저(`is_active = TRUE`) 조건으로 오프셋을 한정하고, `ORDER BY score DESC, nickname ASC LIMIT 1`로 동점 처리를 단일화합니다.
+2. **방장 위임 트랜잭션 바인딩**: 기존 방장의 호스트 여부를 일괄 해제(`is_host = FALSE`) 처리한 후 선출된 최고 득점 유저를 승격(`is_host = TRUE`)시키는 갱신 쿼리를 동일 트랜잭션 내에서 실행하고, 변경 사항을 대기실 전체 알림으로 피드합니다.
+3. **게임오버 수명주기 전 구간 적용**:
+   - `guess` 액션 내의 마지막 라운드 게임오버 판정 분기에 해당 헬퍼 함수를 장착합니다.
+   - `game-over` 액션(방장에 의한 임의 종료) 처리를 트랜잭션(`BEGIN - COMMIT`) 블록으로 전환하고 함수를 적용해 조기 종료 시에도 최고 득점자에게 방장이 공정하게 양도되도록 제어합니다.
+
 ---
 ## 🕒 작업 변경 이력 (Changelog)
 
@@ -573,4 +602,31 @@
 - **세부 변경점**:
   - `app/page.js`에서 플레이어 슬롯 돔 매핑 내부 `slot-name-wrapper` 안의 인라인 강퇴 버튼을 걷어내고 카드 자식 노드 최하단에 absolute X 강퇴 버튼(`.kick-player-btn-absolute`)을 배치.
   - `app/globals.css`에서 부모인 `.lobby-player-slot`에 `position: relative;`를 추가하여 절대 배치 기준점을 확보하고, 기존 `.kick-player-btn` 스타일을 삭제하고 `position: absolute; top: 6px; right: 8px;`와 둥근 구형 뱃지 스타일을 적용해 다른 UI 요소를 침범하지 않는 X 버튼을 핫픽스 적용.
+
+### 🕒 2026-07-02 14:34 - 대기실 내 강퇴 버튼 모서리 걸침 음수 오프셋 핫픽스 적용
+- **변경 목적**: 강퇴용 빨간 원형 X 버튼이 대기실 플레이어 카드 최우측 상단 꼭짓점 모서리에 자연스럽게 걸치도록 음수 오프셋 위치 보정 진행
+- **수정/추가된 파일**:
+  - [globals.css](file:///c:/MiniProject/miniproject/app/globals.css) (수정)
+  - [prd.md](file:///c:/MiniProject/miniproject/prd.md) (수정)
+- **세부 변경점**:
+  - `app/globals.css` 파일 내 `.kick-player-btn-absolute` 의 `top` 과 `right` 값을 각각 `top: -10px; right: -10px;` 로 교정하여 꼭짓점 모서리 테두리 선상에 X 마크가 예쁘게 걸치도록 디자인 보정을 완료함.
+
+### 🕒 2026-07-02 14:36 - 봇 이름 고유화 및 (봇) 식별 서픽스 강제 주입 완료
+- **변경 목적**: 봇 추가 시 이름이 서로 겹치는 현상을 방지하고, 사람이 참가한 닉네임과 직관적으로 헷갈리지 않게 식별 태그 부착
+- **수정/추가된 파일**:
+  - [route.js](file:///c:/MiniProject/miniproject/app/api/rooms/action/route.js) (수정)
+  - [prd.md](file:///c:/MiniProject/miniproject/prd.md) (수정)
+- **세부 변경점**:
+  - `action/route.js` 의 `invite-bot` 처리 블록 내 `BOT_POOL` 상수의 각 봇 `name` 값 뒤에 ` (봇)` 식별 서픽스를 강제 부여함 (예: `노랑병아리 (봇)`).
+  - 중복 체크 필터링(`activeNicknames.includes(bp.name)`)이 이 서픽스 닉네임 단위로 동작하도록 보장하여 고유한 봇이 다채롭게 순차 조인되며, 채팅/점수판 등 전체 인게임 UI 계층에 식별 태그가 자동으로 일괄 전파되도록 구성함.
+
+### 🕒 2026-07-02 14:39 - 게임 종료 시 최고 득점자 방장 승격 및 위임 시스템 구현 완료
+- **변경 목적**: 게임이 끝났을 때 최고 점수를 획득한 플레이어에게 방장 역할을 자동으로 이양하여 다음 게임 준비 흐름 제어권 위임
+- **수정/추가된 파일**:
+  - [route.js](file:///c:/MiniProject/miniproject/app/api/rooms/action/route.js) (수정)
+  - [prd.md](file:///c:/MiniProject/miniproject/prd.md) (수정)
+- **세부 변경점**:
+  - `action/route.js` 상단에 `assignNewHostByScore` 비동기 함수 추가 (봇을 제외하고 활성화된 인간 플레이어 중 `ORDER BY score DESC, nickname ASC LIMIT 1`로 최고 득점 1인을 선출해 방장 승격 및 시스템 공지 추가).
+  - `guess` 액션의 정상 게임 오버 분기에 방장 승격 헬퍼 함수를 장착함.
+  - `game-over` 액션(방장에 의한 임의 조기 종료)을 `BEGIN-COMMIT` 트랜잭션 안전성으로 래핑하고 최고 득점자 방장 위임 로직을 결합함.
 

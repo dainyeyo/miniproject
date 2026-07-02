@@ -6,6 +6,30 @@ const DEFAULT_FALLBACK_WORDS = [
   '사운드오브뮤직', '클래식음악', '교향곡', '피아노', '바이올린', '첼로', '트럼펫'
 ];
 
+async function assignNewHostByScore(client, roomCode) {
+  // 1. 최고 점수 활성 인간 플레이어 찾기 (동점 시 닉네임 사전순)
+  const topPlayerRes = await client.query(
+    "SELECT id, nickname, score FROM players WHERE room_code = $1 AND is_active = TRUE AND id NOT LIKE 'BOT-%' ORDER BY score DESC, nickname ASC LIMIT 1",
+    [roomCode]
+  );
+
+  if (topPlayerRes.rows.length > 0) {
+    const topPlayer = topPlayerRes.rows[0];
+    
+    // 2. 기존 모든 플레이어 방장 권한 해제
+    await client.query("UPDATE players SET is_host = FALSE WHERE room_code = $1", [roomCode]);
+    
+    // 3. 새 방장 권한 부여
+    await client.query("UPDATE players SET is_host = TRUE WHERE id = $1", [topPlayer.id]);
+    
+    // 4. 시스템 메시지 안내
+    await client.query(
+      "INSERT INTO chat_messages (room_code, player_id, nickname, message, type) VALUES ($1, 'system', 'System', $2, 'system-msg')",
+      [roomCode, `👑 최고 득점자인 [${topPlayer.nickname}]님이 새로운 방장이 되었습니다!`]
+    );
+  }
+}
+
 export async function POST(request) {
   const dbUrl = process.env.DATABASE_URL;
   if (!dbUrl) {
@@ -81,11 +105,11 @@ export async function POST(request) {
         const activeNicknames = activePlayersRes.rows.map(p => p.nickname);
 
         const BOT_POOL = [
-          { name: '노랑병아리', avatar: '🐥', score: 280, status: 'ready' },
-          { name: '새벽수탉', avatar: '🐓', score: 190, status: 'ready' },
-          { name: '밤부엉이', avatar: '🦉', score: 420, status: 'ready' },
-          { name: '아기오리', avatar: '🦆', score: 250, status: 'ready' },
-          { name: '골든리트리버', avatar: '🐕', score: 310, status: 'ready' }
+          { name: '노랑병아리 (봇)', avatar: '🐥', score: 280, status: 'ready' },
+          { name: '새벽수탉 (봇)', avatar: '🐓', score: 190, status: 'ready' },
+          { name: '밤부엉이 (봇)', avatar: '🦉', score: 420, status: 'ready' },
+          { name: '아기오리 (봇)', avatar: '🦆', score: 250, status: 'ready' },
+          { name: '골든리트리버 (봇)', avatar: '🐕', score: 310, status: 'ready' }
         ];
 
         const availableBots = BOT_POOL.filter(bp => !activeNicknames.includes(bp.name));
@@ -293,6 +317,8 @@ export async function POST(request) {
                   "INSERT INTO chat_messages (room_code, player_id, nickname, message, type) VALUES ($1, 'system', 'System', '🏆 게임이 완전히 끝났습니다! 최종 스코어가 기록됩니다.', 'system-msg')",
                   [normalizedCode]
                 );
+                // 최고 득점자에게 방장 자동 위임
+                await assignNewHostByScore(client, normalizedCode);
               }
             }
             
@@ -365,10 +391,22 @@ export async function POST(request) {
           return NextResponse.json({ error: '방장만 게임을 종료할 수 있습니다.' }, { status: 403 });
         }
 
+        await client.query('BEGIN');
+
         await client.query(
           "UPDATE game_rooms SET status = 'result' WHERE room_code = $1",
           [normalizedCode]
         );
+
+        await client.query(
+          "INSERT INTO chat_messages (room_code, player_id, nickname, message, type) VALUES ($1, 'system', 'System', '🏆 게임이 완전히 끝났습니다! 최종 스코어가 기록됩니다.', 'system-msg')",
+          [normalizedCode]
+        );
+
+        // 최고 득점자에게 방장 자동 위임
+        await assignNewHostByScore(client, normalizedCode);
+
+        await client.query('COMMIT');
         break;
       }
 
