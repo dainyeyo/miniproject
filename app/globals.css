@@ -417,7 +417,7 @@ button {
 
 .waiting-room-body {
   display: grid;
-  grid-template-columns: 240px 1fr 280px;
+  grid-template-columns: 260px 1fr 280px;
   gap: 20px;
   min-height: 0;
 }
@@ -439,10 +439,8 @@ button {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 520px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding-right: 4px;
+  overflow: visible;
+  padding: 10px 10px 10px 0;
 }
 
 .lobby-player-slot {
