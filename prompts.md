@@ -435,3 +435,54 @@
   - `app/page.js`의 `handleAiServerMessage` 의 `'done'` 케이스 및 `generateAiViaPollinations` 비동기 동작 완료 시 채팅 로그에 알림을 추가하던 `addSystemMsg` 구문 제거.
   - `realtime-server/server.js` 내 `requestAiImageGeneration` 성공 시점에 채팅 패킷을 쏘던 `this.broadcastToRoom` 구문 제거.
   - `realtime-server/server.js` 내 타이머 만료 핸들러 `handleTimerExpiration` 에서 정답을 전송하던 `this.broadcastToRoom` 구문을 삭제하여 Next.js 폴링에 의한 정답 1회 출력으로 일원화.
+
+## 📌 22단계: 정답 미인식 SQL 바인딩 버그 수정 및 타이머 종료 중복 API 호출 제한
+### 사용자의 지시 프롬프트 원문
+> 정답을 입력해도 정답처리가 안되고 라운드가 끝날때 정답이 뭐였는지 알려주는 채팅이 2개씩 나와 이거 수정해
+
+### 기술적 해결책 및 아키텍처 의사결정(ADR) 요약
+1. **런타임 DB 바인딩 정밀화 (SQL Parameter Binding Correctness)**:
+   - 전원 정답 시 라운드 조기 종료를 처리하던 `guess` 액션 내부에서 시스템 메시지(`chat_messages` 테이블) 인서트 쿼리 시, `$1` 위치에 들어갈 `[normalizedCode]` 매개변수 배열이 공급되지 않아 발생하던 500 DB 런타임 오류 해결.
+   - 트랜잭션 롤백으로 인해 정답 상태 업데이트가 유실되던 문제를 바인딩 데이터 정상 주입을 통해 완치.
+2. **참조 상태 기반 타이머 실행 조절기 (Timer Gate Lock via Ref)**:
+   - React `timerSeconds` 상태 변화에 따라 인터벌 훅이 매초 재생성되며 임계치(0초) 도달 시 `handleTimerEnd`가 비동기 루프로 연속 실행되어, 방장 클라이언트가 `reveal-answer` API 요청을 2회 이상 보내던 버그 수정.
+   - 컴포넌트 생명주기 동안 참조 정합성이 상시 유지되는 `timerEndTriggeredRef` 를 도입해, 1차 호출 즉시 게이트(Gate)를 잠그고, 새 라운드(`current_round` 변경)가 시작될 때 잠금을 풀어 중복 API 발송을 완전 차단.
+
+---
+### 🕒 2026-07-02 13:40 - 정답 미인식 롤백 오류 및 정답 이중 노출 버그 최종 해결
+- **변경 목적**: 게스트가 정답을 맞춰도 백엔드 에러로 롤백되어 인정되지 않는 현상을 정상화하고, 타이머 만료 시 정답 공개 메시지가 두 번 나오는 중복 호출 해결.
+- **수정/추가된 파일**:
+  - [route.js](file:///c:/MiniProject/miniproject/app/api/rooms/action/route.js) (수정)
+  - [page.js](file:///c:/MiniProject/miniproject/app/page.js) (수정)
+- **세부 변경점**:
+  - `route.js`의 `guess` 액션 내부에서 모든 참여자 정답 및 게임 오버 시스템 메시지 기록 쿼리에 `[normalizedCode]` 매개변수 인자를 공급하여 SQL 바인딩 크래시 방지.
+  - `app/page.js`에 컴포넌트 레벨 가드 `timerEndTriggeredRef` 를 신설하여 `handleTimerEnd` 가 2회 이상 호출되는 동작을 조기 차단.
+  - `app/page.js` 폴링 루프의 라운드 변경 감지 블록에 `timerEndTriggeredRef.current = false` 리셋 연동 장치 탑재.
+
+## 📌 23단계: 대기실 봇 추가 영속화 및 봇 게임플레이 시뮬레이터 백엔드 연동
+### 사용자의 지시 프롬프트 원문
+> 게임 대기 화면에서 봇추가를 누르면 잠깐 생겼다가 지워진다 이거 수정해줘
+
+### 기술적 해결책 및 아키텍처 의사결정(ADR) 요약
+1. **백엔드 DB 기반 봇 추가 기능 영속화**:
+   - 프론트엔드 로컬 React 상태에만 봇 정보를 주입하던 기존의 불완전한 봇 추가 기능을 전면 개편.
+   - `/api/rooms/action` API에 `invite-bot` 액션을 추가하여 봇 추가 요청 수신 시, 백엔드에서 봇 풀(`BOT_POOL`)을 기반으로 미사용 봇을 선정해 `players` 테이블과 `chat_messages` 테이블(입장 메시지)에 실제 레코드(`BOT-XXXX` 형태의 ID)로 인서트하여 영속화함으로써 폴링 동기화 시 봇이 소멸하는 버그 해결.
+2. **봇 세션 만료 방지 및 생명주기 관리**:
+   - `status/route.js` 의 하트비트 세션 만료 쿼리(12초 이상 비활성 정리)에 `id NOT LIKE 'BOT-%'` 조건을 주입하여 봇들이 방에서 자동으로 소멸되는 것을 차단.
+   - 방에 살아있는 유저가 없어 방을 폭파하는 판단 기준 및 방장 위임 로직에서도 봇을 제외하고 실제 인간 플레이어 기준으로만 판정되도록 격리 처리.
+3. **게임 플레이 내 봇의 출제자(Drawer) 배제**:
+   - `start-game`, `next-round`, `guess`(조기종료) 액션의 출제자(Drawer) 선정 기준 쿼리에 `id NOT LIKE 'BOT-%'` 조건을 추가해 봇이 그릴 차례가 되어 게임이 멈추는 상황을 원천 예방.
+4. **방장 대리형 봇 시뮬레이션 API 중계**:
+   - 봇 시뮬레이터(`triggerBotGameplay`)가 방장(`isHost`) 화면에서 구동되어 봇의 정답 입력 타이밍이 도래하면 봇의 ID로 백엔드 `/api/rooms/action` (`action: 'guess'`) API를 호출하고, 잡담 발생 시에는 봇의 닉네임과 ID로 `/api/rooms/chat` API를 호출하도록 설계. 이를 통해 모든 게스트들의 화면에도 봇의 액션이 실시간 동기화되게 유도.
+
+---
+### 🕒 2026-07-02 13:48 - 대기실 봇 추가 영속화 및 봇 시뮬레이터 연동 완료
+- **변경 목적**: 봇 추가 시 대기실 목록에서 봇이 사라지는 버그 해결 및 게임 진행 시 봇의 정답/잡담 시뮬레이션이 모든 플레이어 화면에 원활히 동기화되도록 연동.
+- **수정/추가된 파일**:
+  - [status/route.js](file:///c:/MiniProject/miniproject/app/api/rooms/status/route.js) (수정)
+  - [action/route.js](file:///c:/MiniProject/miniproject/app/api/rooms/action/route.js) (수정)
+  - [page.js](file:///c:/MiniProject/miniproject/app/page.js) (수정)
+- **세부 변경점**:
+  - `status/route.js`에서 비활성 유저 퇴장 및 방장 위임, 방 폭파 여부 검증 쿼리 시 봇을 검사 대상에서 일괄 예외 처리.
+  - `action/route.js`에서 봇 추가(invite-bot) 로직을 개발하고, 게임 시작 및 라운드 전환 쿼리에서 출제자로 봇이 선정되지 않도록 보완.
+  - `app/page.js`에서 봇 추가 시 `invite-bot` API를 쏘고, `triggerBotGameplay`에서 방장 브라우저 대행으로 봇의 채팅 및 정답 텍스트를 백엔드로 중계하도록 리팩토링.

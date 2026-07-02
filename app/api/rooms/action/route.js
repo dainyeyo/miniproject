@@ -56,6 +56,65 @@ export async function POST(request) {
         break;
       }
 
+      case 'invite-bot': {
+        if (!player.is_host) {
+          await client.end();
+          return NextResponse.json({ error: '방장만 봇을 초대할 수 있습니다.' }, { status: 403 });
+        }
+
+        // 1. 현재 대기실 인원 수 확인
+        const countRes = await client.query(
+          "SELECT COUNT(*) as count FROM players WHERE room_code = $1 AND is_active = TRUE",
+          [normalizedCode]
+        );
+        const playerCount = parseInt(countRes.rows[0].count, 10);
+        if (playerCount >= 6) {
+          await client.end();
+          return NextResponse.json({ error: '더 이상 플레이어를 초대할 수 없습니다. (최대 6명)' }, { status: 400 });
+        }
+
+        // 2. 현재 방에 초대되어 있는 플레이어들의 닉네임 파악
+        const activePlayersRes = await client.query(
+          "SELECT nickname FROM players WHERE room_code = $1 AND is_active = TRUE",
+          [normalizedCode]
+        );
+        const activeNicknames = activePlayersRes.rows.map(p => p.nickname);
+
+        const BOT_POOL = [
+          { name: '노랑병아리', avatar: '🐥', score: 280, status: 'ready' },
+          { name: '새벽수탉', avatar: '🐓', score: 190, status: 'ready' },
+          { name: '밤부엉이', avatar: '🦉', score: 420, status: 'ready' },
+          { name: '아기오리', avatar: '🦆', score: 250, status: 'ready' },
+          { name: '골든리트리버', avatar: '🐕', score: 310, status: 'ready' }
+        ];
+
+        const availableBots = BOT_POOL.filter(bp => !activeNicknames.includes(bp.name));
+        if (availableBots.length === 0) {
+          await client.end();
+          return NextResponse.json({ error: '초대할 수 있는 봇이 더 이상 없습니다.' }, { status: 400 });
+        }
+
+        const bot = availableBots[0];
+        const botId = `BOT-${Math.random().toString(36).substring(2, 11).toUpperCase()}`;
+
+        await client.query('BEGIN');
+
+        // 봇 플레이어 추가
+        await client.query(
+          "INSERT INTO players (id, room_code, nickname, avatar, score, is_host, status, is_active, last_active) VALUES ($1, $2, $3, $4, $5, FALSE, 'ready', TRUE, NOW())",
+          [botId, normalizedCode, bot.name, bot.avatar, 0]
+        );
+
+        // 시스템 메시지 추가
+        await client.query(
+          "INSERT INTO chat_messages (room_code, player_id, nickname, message, type) VALUES ($1, $2, $3, $4, 'system-msg')",
+          [normalizedCode, botId, bot.name, `🐥 ${bot.name}님이 대기실에 입장했습니다.`]
+        );
+
+        await client.query('COMMIT');
+        break;
+      }
+
       case 'start-game': {
         if (!player.is_host) {
           await client.end();
@@ -64,8 +123,8 @@ export async function POST(request) {
 
         const { maxRound, keyword } = payload;
         
-        // 순서대로 첫 출제자(drawer) 지정 (닉네임 기준 1번째 플레이어)
-        const playersRes = await client.query('SELECT id FROM players WHERE room_code = $1 ORDER BY nickname ASC', [normalizedCode]);
+        // 순서대로 첫 출제자(drawer) 지정 (닉네임 기준 1번째 플레이어, 봇은 제외)
+        const playersRes = await client.query("SELECT id FROM players WHERE room_code = $1 AND id NOT LIKE 'BOT-%' ORDER BY nickname ASC", [normalizedCode]);
         const drawerId = playersRes.rows[0].id;
 
         await client.query('BEGIN');
@@ -188,7 +247,8 @@ export async function POST(request) {
 
             if (totalGuesserCount > 0 && correctGuesserCount === totalGuesserCount) {
               await client.query(
-                "INSERT INTO chat_messages (room_code, player_id, nickname, message, type) VALUES ($1, 'system', 'System', '⚡ 모든 참여자가 정답을 맞혔습니다! 다음 라운드로 이동합니다.', 'system-msg')"
+                "INSERT INTO chat_messages (room_code, player_id, nickname, message, type) VALUES ($1, 'system', 'System', '⚡ 모든 참여자가 정답을 맞혔습니다! 다음 라운드로 이동합니다.', 'system-msg')",
+                [normalizedCode]
               );
 
               if (current_round < max_round) {
@@ -208,8 +268,8 @@ export async function POST(request) {
                 }
 
                 const nextRound = current_round + 1;
-                // 다음 라운드 출제자 결정
-                const playersRes = await client.query('SELECT id FROM players WHERE room_code = $1 ORDER BY nickname ASC', [normalizedCode]);
+                // 다음 라운드 출제자 결정 (봇은 제외)
+                const playersRes = await client.query("SELECT id FROM players WHERE room_code = $1 AND id NOT LIKE 'BOT-%' ORDER BY nickname ASC", [normalizedCode]);
                 const playerIds = playersRes.rows.map(p => p.id);
                 const drawerIndex = (nextRound - 1) % playerIds.length;
                 const drawerId = playerIds[drawerIndex];
@@ -230,7 +290,8 @@ export async function POST(request) {
                   [normalizedCode]
                 );
                 await client.query(
-                  "INSERT INTO chat_messages (room_code, player_id, nickname, message, type) VALUES ($1, 'system', 'System', '🏆 게임이 완전히 끝났습니다! 최종 스코어가 기록됩니다.', 'system-msg')"
+                  "INSERT INTO chat_messages (room_code, player_id, nickname, message, type) VALUES ($1, 'system', 'System', '🏆 게임이 완전히 끝났습니다! 최종 스코어가 기록됩니다.', 'system-msg')",
+                  [normalizedCode]
                 );
               }
             }
@@ -273,8 +334,8 @@ export async function POST(request) {
 
         const { nextRound, keyword } = payload;
 
-        // 다음 라운드 출제자 결정
-        const playersRes = await client.query('SELECT id FROM players WHERE room_code = $1 ORDER BY nickname ASC', [normalizedCode]);
+        // 다음 라운드 출제자 결정 (봇은 제외)
+        const playersRes = await client.query("SELECT id FROM players WHERE room_code = $1 AND id NOT LIKE 'BOT-%' ORDER BY nickname ASC", [normalizedCode]);
         const playerIds = playersRes.rows.map(p => p.id);
         
         // 현재 라운드 번호에 따라 출제자를 순환하며 지정

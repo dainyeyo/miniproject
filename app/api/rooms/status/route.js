@@ -30,19 +30,19 @@ export async function GET(request) {
       await client.query('UPDATE players SET last_active = NOW() WHERE id = $1 AND room_code = $2', [playerId, normalizedCode]);
     }
 
-    // 2. 비활성 유저 처리 (12초 이상 무응답 시)
+    // 2. 비활성 유저 처리 (12초 이상 무응답 시, 봇은 제외)
     // 대기실(waiting)에서는 DB에서 즉시 삭제
     await client.query(
-      "DELETE FROM players WHERE last_active < NOW() - INTERVAL '12 seconds' AND room_code IN (SELECT room_code FROM game_rooms WHERE status = 'waiting')"
+      "DELETE FROM players WHERE last_active < NOW() - INTERVAL '12 seconds' AND id NOT LIKE 'BOT-%' AND room_code IN (SELECT room_code FROM game_rooms WHERE status = 'waiting')"
     );
     // 게임중(game) 혹은 결과창(result)에서는 퇴장 처리하되 DB의 점수 랭킹 보존을 위해 is_active = false 처리
     await client.query(
-      "UPDATE players SET is_active = FALSE WHERE last_active < NOW() - INTERVAL '12 seconds' AND is_active = TRUE AND room_code IN (SELECT room_code FROM game_rooms WHERE status != 'waiting')"
+      "UPDATE players SET is_active = FALSE WHERE last_active < NOW() - INTERVAL '12 seconds' AND id NOT LIKE 'BOT-%' AND is_active = TRUE AND room_code IN (SELECT room_code FROM game_rooms WHERE status != 'waiting')"
     );
 
-    // 3. 만약 방에 활성 플레이어(is_active = true)가 한 명도 없다면 방 삭제 및 해당 방의 모든 플레이어 정보 제거
+    // 3. 만약 방에 활성 플레이어(is_active = true)가 한 명도 없다면 방 삭제 및 해당 방의 모든 플레이어 정보 제거 (봇은 카운트에서 제외)
     const activeCountRes = await client.query(
-      "SELECT COUNT(*) as count FROM players WHERE room_code = $1 AND is_active = TRUE",
+      "SELECT COUNT(*) as count FROM players WHERE room_code = $1 AND is_active = TRUE AND id NOT LIKE 'BOT-%'",
       [normalizedCode]
     );
     const activeCount = parseInt(activeCountRes.rows[0].count, 10);
@@ -92,13 +92,17 @@ export async function GET(request) {
 
     let players = playersRes.rows;
 
-    // 6. 만약 방장(Host)이 지워졌거나 비활성화되었다면, 남아있는 가장 첫 번째 활성 플레이어를 방장으로 지정
+    // 6. 만약 방장(Host)이 지워졌거나 비활성화되었다면, 남아있는 가장 첫 번째 활성 플레이어를 방장으로 지정 (봇은 방장 위임에서 제외)
     if (room.status !== 'result') {
       const hasHost = players.some(p => p.is_host && p.is_active);
       if (!hasHost && players.length > 0) {
-        const newHostId = players[0].id;
-        await client.query('UPDATE players SET is_host = true WHERE id = $1', [newHostId]);
-        players[0].is_host = true;
+        const humanPlayers = players.filter(p => !p.id.startsWith('BOT-'));
+        if (humanPlayers.length > 0) {
+          const newHostId = humanPlayers[0].id;
+          await client.query('UPDATE players SET is_host = true WHERE id = $1', [newHostId]);
+          const targetPlayer = players.find(p => p.id === newHostId);
+          if (targetPlayer) targetPlayer.is_host = true;
+        }
       }
     }
 

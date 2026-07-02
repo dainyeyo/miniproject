@@ -73,6 +73,7 @@ export default function GamePage() {
   const lastAiPromptRef = useRef('');
   const lastChatMsgIdRef = useRef(0);
   const localRoundRef = useRef(1);
+  const timerEndTriggeredRef = useRef(false);
 
   const canvasRef = useRef(null);
   const isDrawingRef = useRef(false);
@@ -622,9 +623,16 @@ export default function GamePage() {
               triggerAiDrawing(room.current_keyword);
             }
           }
+          // 방장인 경우 첫 라운드 봇 시뮬레이션 가동
+          if (me && me.is_host) {
+            triggerBotGameplay(room.current_keyword);
+          }
         } else if (room.status === 'result' && currentScreen !== 'screen-result') {
           setCurrentScreen('screen-result');
           cleanupAiGenerator();
+          // 봇 시뮬레이션 타이머 정리
+          if (botGameplayTimeoutRef.current) clearTimeout(botGameplayTimeoutRef.current);
+          if (botChatIntervalRef.current) clearInterval(botChatIntervalRef.current);
         }
 
         // 4. 세부 라운드 및 그림 데이터 동기화
@@ -640,12 +648,18 @@ export default function GamePage() {
             setCanvasDataFromDb('');
             setAiImageSrc(null);
             clearCanvas();
+            timerEndTriggeredRef.current = false;
             
             if (amIDrawer) {
               addSystemMsg(`🎨 Round ${room.current_round} 시작! 제시어를 확인해 주세요.`);
               if (selectedMode === 'ai') {
                 triggerAiDrawing(room.current_keyword);
               }
+            }
+
+            // 방장인 경우 라운드 변경 시 봇 시뮬레이션 재가동
+            if (me && me.is_host) {
+              triggerBotGameplay(room.current_keyword);
             } else {
               addSystemMsg(`🎨 Round ${room.current_round} 시작! 출제자가 그림을 그리고 있습니다.`);
             }
@@ -723,6 +737,8 @@ export default function GamePage() {
   // 타이머 만료 시 흐름 제어 (방장 서버 연동 / 게스트 대기)
   const handleTimerEnd = async () => {
     if (currentScreen === 'screen-game' && isHost) {
+      if (timerEndTriggeredRef.current) return;
+      timerEndTriggeredRef.current = true;
       try {
         // 1. 먼저 DB에 정답 공개 로그 기록 삽입
         await fetch('/api/rooms/action', {
@@ -783,6 +799,10 @@ export default function GamePage() {
     cleanupAiGenerator();
     setChatLog([{ type: 'system-msg', text: '대기실로 돌아왔습니다. 다음 게임을 준비해 주세요.' }]);
     
+    // 봇 시뮬레이션 타이머 명시적 클리어
+    if (botGameplayTimeoutRef.current) clearTimeout(botGameplayTimeoutRef.current);
+    if (botChatIntervalRef.current) clearInterval(botChatIntervalRef.current);
+
     localRoundRef.current = 1;
     setCurrentRound(1);
     
@@ -916,53 +936,80 @@ export default function GamePage() {
 
     // 봇 정답 타이밍 설계 (10~25초 내에 무작위 시뮬레이션)
     const guessDelay = Math.floor(Math.random() * 15000) + 10000;
-    botGameplayTimeoutRef.current = setTimeout(() => {
-      if (currentScreen === 'screen-game') {
-        const correctBot = players.find(p => !p.isMe);
-        if (correctBot) {
-          appendFeed(correctBot.name, `${keyword}!`, 'correct-answer');
-          addSystemMsg(`🎉 ${correctBot.name}님이 정답을 맞혔습니다! (+100 pts)`);
-          
-          setPlayers(prev => prev.map(p => {
-            if (p.name === correctBot.name) {
-              return { ...p, score: p.score + 100 };
-            }
-            return p;
-          }));
+    botGameplayTimeoutRef.current = setTimeout(async () => {
+      // players 목록 중 봇(id가 BOT-으로 시작)이면서 아직 정답 상태가 아닌 봇 선별
+      const uncorrectBots = players.filter(p => p.id && p.id.startsWith('BOT-') && p.status !== '정답!');
+      if (uncorrectBots.length > 0 && isHost) {
+        // 정답을 맞추지 않은 봇 중 무작위 하나 선정
+        const correctBot = uncorrectBots[Math.floor(Math.random() * uncorrectBots.length)];
+        try {
+          await fetch('/api/rooms/action', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              roomCode,
+              playerId: correctBot.id, // 봇의 ID로 API를 보냄
+              action: 'guess',
+              payload: { guess: keyword }
+            })
+          });
+        } catch (err) {
+          console.error('Failed to trigger bot guess:', err);
         }
       }
     }, guessDelay);
 
     // 봇 잡담 시뮬레이터
     const chatQuotes = ['와 진짜 잘 그린다', '혹시 프라이팬인가?', '오리 같기도 하고...', '어려운데요 ㅋㅋㅋ', '지우개 지우는 거 보소', '사운드오브뮤직?'];
-    botChatIntervalRef.current = setInterval(() => {
-      const activeBots = players.filter(p => !p.isMe);
-      if (activeBots.length > 0) {
+    botChatIntervalRef.current = setInterval(async () => {
+      // 봇들만 필터링
+      const activeBots = players.filter(p => p.id && p.id.startsWith('BOT-'));
+      if (activeBots.length > 0 && isHost) {
         const randBot = activeBots[Math.floor(Math.random() * activeBots.length)];
         const randQuote = chatQuotes[Math.floor(Math.random() * chatQuotes.length)];
-        appendFeed(randBot.name, randQuote, 'chat-msg');
+        try {
+          await fetch('/api/rooms/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              roomCode,
+              playerId: randBot.id,
+              nickname: randBot.name,
+              message: randQuote,
+              type: 'chat'
+            })
+          });
+        } catch (err) {
+          console.error('Failed to send bot chat:', err);
+        }
       }
     }, 12000);
   };
 
   // 봇 추가 초대 핸들러
-  const inviteBot = () => {
+  const inviteBot = async () => {
     if (players.length >= 6) {
       alert('더 이상 플레이어를 초대할 수 없습니다. (최대 6명)');
       return;
     }
-    const availableBots = botPool.filter(bp => !players.some(p => p.name === bp.name));
-    if (availableBots.length > 0) {
-      const bot = availableBots[0];
-      setPlayers(prev => [...prev, {
-        name: bot.name,
-        avatar: bot.avatar,
-        score: bot.score,
-        status: bot.status,
-        isMe: false,
-        isOwner: false
-      }]);
-      addSystemMsg(`🐥 ${bot.name}님이 대기실에 입장했습니다.`);
+    try {
+      const res = await fetch('/api/rooms/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomCode,
+          playerId,
+          action: 'invite-bot',
+          payload: {}
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || '봇 초대 도중 오류가 발생했습니다.');
+      }
+    } catch (err) {
+      console.error('Failed to invite bot:', err);
+      alert('서버와 통신할 수 없습니다.');
     }
   };
 
