@@ -678,8 +678,9 @@ export default function GamePage() {
     audio.volume = sfxMuted ? 0 : sfxVolume / 100;
   }, [sfxVolume, sfxMuted]);
 
-  // 클릭 효과음 즉시 재생 + 브라우저 자동재생 정책으로 막혔던 배경음악 재개 시도
-  const playClickSound = () => {
+  // 클릭 효과음 즉시 재생 + 브라우저 자동재생 정책으로 막혔던 배경음악 재개 시도 (버튼 클릭 시에만 재생)
+  const playClickSound = (e) => {
+    if (!e.target.closest('button')) return;
     const click = clickAudioRef.current;
     if (click) {
       click.currentTime = 0;
