@@ -18,7 +18,7 @@ if (!databaseUrl || databaseUrl.includes('your_neon_connection_string_here')) {
 
 // 마이그레이션 메인 비즈니스 로직 함수 (SRP 준수)
 async function runMigration() {
-  const csvFilePath = path.join(__dirname, '단어모음.csv');
+  const csvFilePath = path.join(__dirname, 'words_sorted.csv');
   
   // 2. CSV 파일 데이터 적재 및 정제 (Parsing & Cleaning)
   if (!fs.existsSync(csvFilePath)) {
@@ -29,8 +29,19 @@ async function runMigration() {
   console.log('1. CSV 파일 분석 중...');
   const rawData = fs.readFileSync(csvFilePath, 'utf-8');
   
-  // 쉼표(,)를 구분자로 단어를 분리하고, 앞뒤 공백 제거 및 중복 제거
-  const rawWords = rawData.split(',').map(word => word.trim());
+  // CSV 파일 행 단위 파싱 (첫 행은 헤더 'id,word,category,difficulty')
+  const lines = rawData.split(/\r?\n/);
+  const rawWords = [];
+  
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    const cols = line.split(',');
+    if (cols.length > 1) {
+      rawWords.push(cols[1].trim()); // 두 번째 열 (word) 추출
+    }
+  }
+  
   const uniqueWords = [...new Set(rawWords)].filter(word => word.length > 0);
 
   console.log(`총 ${rawWords.length}개의 가공 전 단어 식별.`);

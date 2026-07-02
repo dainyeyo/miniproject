@@ -24,3 +24,6 @@ __pycache__/
 
 # Local tooling binaries
 cloudflared.exe
+
+# AI Generated Images
+model/TEST/frontend/static_images/

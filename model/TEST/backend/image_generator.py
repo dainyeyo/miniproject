@@ -220,14 +220,8 @@ class SDTurboGenerator:
         image: Image.Image = result.images[0]
 
         elapsed = time.time() - start
-        logger.info(f"✅ 이미지 생성 완료 ({elapsed:.2f}초)")
-
-        # 1안: 이미지 공유를 위해 무료 이미지 호스팅(Catbox)에 먼저 업로드 시도
-        shared_url = upload_to_catbox(image)
-        if shared_url:
-            return shared_url
-
-        # 업로드 실패 시 폴백으로 로컬용 base64 문자열 반환
+        # [변경 사항] 로컬 디스크 I/O를 방지하고 Git 이력 오염을 차단하기 위해
+        # 디스크 저장을 생략하고 즉시 In-Memory 상에서 Base64로 인코딩하여 반환합니다.
         return pil_to_base64(image)
 
     def is_gpu(self) -> bool:

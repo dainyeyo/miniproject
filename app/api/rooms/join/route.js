@@ -23,11 +23,17 @@ export async function POST(request) {
 
     await client.connect();
 
-    // 1. 방 존재 여부 확인
+    // 1. 방 존재 여부 및 상태 확인
     const roomRes = await client.query('SELECT room_code, status FROM game_rooms WHERE room_code = $1', [normalizedCode]);
     if (roomRes.rows.length === 0) {
       await client.end();
       return NextResponse.json({ error: '존재하지 않는 방입니다.' }, { status: 404 });
+    }
+
+    const room = roomRes.rows[0];
+    if (room.status !== 'waiting') {
+      await client.end();
+      return NextResponse.json({ error: '이미 게임이 진행 중이거나 종료된 방입니다.' }, { status: 400 });
     }
 
     // 2. 방 최대 인원 확인 (최대 6명)
@@ -42,7 +48,7 @@ export async function POST(request) {
     const playerId = crypto.randomUUID();
     await client.query(
       'INSERT INTO players (id, room_code, nickname, avatar, score, is_host, status) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-      [playerId, normalizedCode, nickname, avatar || '🐥', 0, false, 'ready']
+      [playerId, normalizedCode, nickname, avatar || '🐥', 0, false, 'waiting']
     );
 
     // 4. 입장 후 전체 플레이어 정보 리턴

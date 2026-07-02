@@ -13,7 +13,11 @@ export default function GamePage() {
   // AI Image Generator Configuration & State
   // ==========================================
   const AI_CONFIG = {
+    WS_URL:          process.env.NEXT_PUBLIC_AI_WS_URL || 'ws://localhost:8000/ws/generate',
+    API_BASE:        process.env.NEXT_PUBLIC_AI_API_BASE || 'http://localhost:8000',
     DEBOUNCE_MS:     700,      // 입력 후 대기 시간 (ms)
+    WS_RECONNECT_MS: 3000,    // WebSocket 재연결 간격 (ms)
+    MAX_RECONNECT:   5,        // 최대 재연결 시도 횟수
   };
 
   // ==========================================
@@ -69,6 +73,7 @@ export default function GamePage() {
   const lastAiPromptRef = useRef('');
   const lastChatMsgIdRef = useRef(0);
   const localRoundRef = useRef(1);
+  const timerEndTriggeredRef = useRef(false);
 
   const canvasRef = useRef(null);
   const isDrawingRef = useRef(false);
@@ -157,7 +162,181 @@ export default function GamePage() {
   // ==========================================
   // AI 이미지 생성기 엔진 (SD-Turbo Integration)
   // ==========================================
-  const requestAiGenerate = async (prompt) => {
+  const checkAiServerStatus = async () => {
+    try {
+      const res = await fetch(`${AI_CONFIG.API_BASE}/api/status`, { signal: AbortSignal.timeout(5000) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch (err) {
+      console.error('AI 서버 상태 확인 실패:', err.message);
+      return null;
+    }
+  };
+
+  const connectAiWebSocket = () => {
+    if (aiReconnectCountRef.current >= AI_CONFIG.MAX_RECONNECT) {
+      console.warn('WebSocket 재연결 한도 초과 → HTTP 모드로 전환');
+      setAiStatus('ready');
+      setAiStatusText('HTTP 모드 (WebSocket 불가)');
+      return;
+    }
+
+    console.log(`AI WebSocket 연결 시도 (${aiReconnectCountRef.current + 1}/${AI_CONFIG.MAX_RECONNECT})`);
+    setAiStatus('loading');
+    setAiStatusText('WebSocket 연결 중...');
+
+    const ws = new WebSocket(AI_CONFIG.WS_URL);
+    aiWsRef.current = ws;
+
+    ws.addEventListener('open', () => {
+      console.log('✅ AI WebSocket 연결됨');
+      aiReconnectCountRef.current = 0;
+      setAiStatus('ready');
+      setAiStatusText('WebSocket 연결됨');
+      setAiErrorMsg('');
+    });
+
+    ws.addEventListener('message', (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        handleAiServerMessage(data);
+      } catch (err) {
+        console.error('WebSocket 메시지 파싱 실패:', event.data);
+      }
+    });
+
+    ws.addEventListener('close', (event) => {
+      console.warn('AI WebSocket 연결 종료:', event.code, event.reason);
+      setAiIsGenerating(false);
+
+      if (event.code !== 1000) {
+        setAiStatusText(`재연결 대기 중... (${aiReconnectCountRef.current + 1}/${AI_CONFIG.MAX_RECONNECT})`);
+        aiReconnectCountRef.current++;
+        aiReconnectTimerRef.current = setTimeout(connectAiWebSocket, AI_CONFIG.WS_RECONNECT_MS);
+      } else {
+        setAiStatus('ready');
+        setAiStatusText('HTTP 모드');
+      }
+    });
+
+    ws.addEventListener('error', (err) => {
+      console.error('AI WebSocket 오류:', err);
+    });
+  };
+
+  const handleAiServerMessage = (data) => {
+    switch (data.status) {
+      case 'generating':
+        setAiIsGenerating(true);
+        setAiStatus('generating');
+        setAiStatusText('생성 중');
+        setAiErrorMsg('');
+        break;
+
+      case 'done':
+        setAiIsGenerating(false);
+        setAiStatus('ready');
+        setAiStatusText(aiWsRef.current && aiWsRef.current.readyState === WebSocket.OPEN ? 'WebSocket 연결됨' : 'HTTP 모드');
+        if (data.image) {
+          setAiImageSrc(data.image);
+          setAiImageMeta(`"${data.prompt || lastAiPromptRef.current}" — ${new Date().toLocaleTimeString('ko-KR')}`);
+          
+          if (isDrawer) {
+            fetch('/api/rooms/action', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                roomCode,
+                playerId,
+                action: 'draw-ai',
+                payload: { aiImageUrl: data.image }
+              })
+            }).catch(err => console.error('Failed to sync AI image:', err));
+          }
+        }
+        break;
+
+      case 'error':
+        setAiIsGenerating(false);
+        setAiStatus('error');
+        setAiStatusText('오류');
+        setAiErrorMsg(data.error || '알 수 없는 오류가 발생했습니다.');
+        break;
+
+      default:
+        console.warn('알 수 없는 메시지 status:', data.status);
+    }
+  };
+
+  const generateAiViaHTTP = async (prompt, steps) => {
+    setAiIsGenerating(true);
+    setAiStatus('generating');
+    setAiStatusText('생성 중 (HTTP)');
+    try {
+      const response = await fetch(`${AI_CONFIG.API_BASE}/api/generate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'bypass-tunnel-reminder': 'true',
+          'ngrok-skip-browser-warning': 'true',
+        },
+        body: JSON.stringify({ prompt, steps }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || `서버 오류 (${response.status})`);
+      }
+      handleAiServerMessage({ status: 'done', image: data.image, prompt: data.prompt });
+    } catch (err) {
+      handleAiServerMessage({ status: 'error', error: err.message });
+    } finally {
+      setAiIsGenerating(false);
+    }
+  };
+
+  const generateAiViaPollinations = async (prompt) => {
+    setAiIsGenerating(true);
+    setAiStatus('generating');
+    setAiStatusText('생성 중 (무료 AI)');
+    try {
+      const encodedPrompt = encodeURIComponent(prompt);
+      const seed = Math.floor(Math.random() * 100000);
+      const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=512&height=512&nologo=true&seed=${seed}`;
+
+      const img = new Image();
+      img.src = imageUrl;
+      img.onload = () => {
+        setAiIsGenerating(false);
+        setAiStatus('ready');
+        setAiStatusText('공공 AI 모드 (서버리스)');
+        setAiImageSrc(imageUrl);
+        setAiImageMeta(`"${prompt}" — Pollinations.ai`);
+
+        if (isDrawer) {
+          fetch('/api/rooms/action', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              roomCode,
+              playerId,
+              action: 'draw-ai',
+              payload: { aiImageUrl: imageUrl }
+            })
+          }).catch(err => console.error('Failed to sync AI image:', err));
+        }
+      };
+      img.onerror = () => {
+        throw new Error('공공 AI 이미지 로딩에 실패했습니다.');
+      };
+    } catch (err) {
+      setAiIsGenerating(false);
+      setAiStatus('error');
+      setAiStatusText('오류');
+      setAiErrorMsg(err.message);
+    }
+  };
+
+  const requestAiGenerate = (prompt) => {
     if (!prompt || aiIsGenerating) return;
 
     // 제시어(정답)를 프롬프트에 직접 작성하는 어뷰징 행위를 차단하기 위한 정규화 필터링
@@ -171,52 +350,29 @@ export default function GamePage() {
 
     lastAiPromptRef.current = prompt;
     setAiErrorMsg('');
-    setAiIsGenerating(true);
-    setAiStatus('generating');
-    setAiStatusText('그림 생성 중...');
 
-    try {
-      const response = await fetch('/api/ai/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, steps: aiSteps }),
-      });
-
-      const data = await response.json();
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || `서버 오류 (${response.status})`);
-      }
-
-      setAiImageSrc(data.image);
-      const isFallback = data.source === 'pollinations-fallback';
-      const sourceText = isFallback ? '공공 AI (로컬 오프라인)' : '로컬 AI';
-      setAiImageMeta(`"${prompt}" — ${sourceText} (${new Date().toLocaleTimeString('ko-KR')})`);
-      addSystemMsg(`🤖 AI가 새로운 그림 "${prompt}" 생성을 마쳤습니다!`);
-
-      setAiStatus('ready');
-      setAiStatusText(sourceText);
-
-      if (isDrawer) {
-        fetch('/api/rooms/action', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            roomCode,
-            playerId,
-            action: 'draw-ai',
-            payload: { aiImageUrl: data.image }
-          })
-        }).catch(err => console.error('Failed to sync AI image:', err));
-      }
-
-    } catch (err) {
-      console.error('AI 생성 에러:', err);
-      setAiStatus('error');
-      setAiStatusText('오류');
-      setAiErrorMsg(err.message || '이미지 생성 중 오류가 발생했습니다.');
-    } finally {
-      setAiIsGenerating(false);
+    if (aiStatusText.includes('공공 AI')) {
+      generateAiViaPollinations(prompt);
+    } else {
+      // WebSocket은 PyTorch GPU 추론 스레드 점유 시 타임아웃을 유발하므로 100% HTTP 단일 채널로 고정
+      generateAiViaHTTP(prompt, aiSteps);
     }
+  };
+
+  const cleanupAiGenerator = () => {
+    if (aiWsRef.current) {
+      aiWsRef.current.close();
+      aiWsRef.current = null;
+    }
+    if (aiReconnectTimerRef.current) {
+      clearTimeout(aiReconnectTimerRef.current);
+      aiReconnectTimerRef.current = null;
+    }
+    if (aiDebounceTimerRef.current) {
+      clearTimeout(aiDebounceTimerRef.current);
+      aiDebounceTimerRef.current = null;
+    }
+    aiReconnectCountRef.current = 0;
   };
 
   const triggerAiDrawing = async (keyword) => {
@@ -224,10 +380,54 @@ export default function GamePage() {
     setAiImageMeta('');
     setAiErrorMsg('');
     setAiIsGenerating(false);
+    setAiStatus('loading');
+    setAiStatusText('서버 연결 중...');
+
+    const serverStatus = await checkAiServerStatus();
+
+    if (!serverStatus) {
+      console.log('로컬 AI 서버가 감지되지 않아 Pollinations.ai API로 대체합니다.');
+      setAiStatus('ready');
+      setAiStatusText('공공 AI 모드 (서버리스)');
+      setAiPrompt('');
+      return;
+    }
+
+    if (!serverStatus.ready) {
+      setAiStatus('error');
+      setAiStatusText('모델 로드 실패');
+      setAiErrorMsg('AI 모델 로드에 실패했습니다. 서버 로그를 확인하세요.');
+      return;
+    }
+
+    console.log(`AI 모델 준비됨 — 디바이스: ${serverStatus.device}`);
+    // WebSocket 연결 시도를 생략하고 HTTP 채널 즉시 개방 상태로 전이
     setAiStatus('ready');
-    setAiStatusText('준비완료');
+    setAiStatusText('AI 서버 연결됨');
+
     setAiPrompt('');
   };
+
+  // AI 서버 상태 체크 및 초기 뱃지 활성화 (출제자/비출제자 공통)
+  useEffect(() => {
+    if (selectedMode === 'ai' && currentScreen === 'screen-game') {
+      const initAiStatus = async () => {
+        const serverStatus = await checkAiServerStatus();
+        if (serverStatus && serverStatus.ready) {
+          setAiStatus('ready');
+          setAiStatusText('AI 서버 연결됨');
+        } else if (serverStatus && !serverStatus.ready) {
+          setAiStatus('error');
+          setAiStatusText('모델 로드 실패');
+          setAiErrorMsg('AI 모델 로드에 실패했습니다. 서버 로그를 확인하세요.');
+        } else {
+          setAiStatus('ready');
+          setAiStatusText('공공 AI 모드 (서버리스)');
+        }
+      };
+      initAiStatus();
+    }
+  }, [selectedMode, currentScreen]);
 
   // ==========================================
   // 4. 리사이즈형 드로잉 캔버스 해상도 보존 복원 엔진
@@ -346,9 +546,15 @@ export default function GamePage() {
         
         if (!statusRes.ok) {
           clearInterval(pollInterval);
-          alert(data.error || '방에서 퇴장되었거나 존재하지 않는 방입니다.');
+          if (statusRes.status === 403 && data.kicked) {
+            alert('강퇴 당하였습니다.');
+          } else {
+            alert(data.error || '방에서 퇴장되었거나 존재하지 않는 방입니다.');
+          }
           cleanupAiGenerator();
           setCurrentScreen('screen-landing');
+          setRoomCode('');
+          setPlayerId('');
           return;
         }
 
@@ -376,16 +582,31 @@ export default function GamePage() {
         const room = data.room;
         const serverPlayers = data.players;
 
+        // [방어 코드] 방장이 대기실로 돌아가 방 상태가 waiting으로 초기화되었더라도,
+        // 결과 화면에 남아있는 게스트들은 본인이 대기실 복귀 버튼을 누르기 전까지 최종 점수판을 유지해야 한다.
+        if (currentScreen === 'screen-result' && room.status === 'waiting') {
+          return;
+        }
+
         // 1. 플레이어 목록 및 본인 권한 업데이트
-        const mappedPlayers = serverPlayers.map(p => ({
-          name: p.nickname,
-          avatar: p.avatar,
-          score: p.score,
-          isMe: p.id === playerId,
-          isOwner: p.is_host,
-          status: p.status === 'drawing' ? '그리는 중' : p.status === 'correct' ? '정답!' : '대기중',
-          id: p.id
-        }));
+        const mappedPlayers = serverPlayers.map(p => {
+          let displayStatus = '대기중';
+          if (room.status === 'waiting') {
+            displayStatus = p.is_host ? '방장' : p.status === 'ready' ? '준비완료' : '준비중';
+          } else {
+            displayStatus = p.status === 'drawing' ? '그리는 중' : p.status === 'correct' ? '정답!' : '대기중';
+          }
+          return {
+            name: p.nickname,
+            avatar: p.avatar,
+            score: p.score,
+            isMe: p.id === playerId,
+            isOwner: p.is_host,
+            status: displayStatus,
+            rawStatus: p.status, // 백엔드 로우 상태 보존
+            id: p.id
+          };
+        });
         setPlayers(mappedPlayers);
 
         const me = serverPlayers.find(p => p.id === playerId);
@@ -417,9 +638,16 @@ export default function GamePage() {
               triggerAiDrawing(room.current_keyword);
             }
           }
+          // 방장인 경우 첫 라운드 봇 시뮬레이션 가동
+          if (me && me.is_host) {
+            triggerBotGameplay(room.current_keyword);
+          }
         } else if (room.status === 'result' && currentScreen !== 'screen-result') {
           setCurrentScreen('screen-result');
           cleanupAiGenerator();
+          // 봇 시뮬레이션 타이머 정리
+          if (botGameplayTimeoutRef.current) clearTimeout(botGameplayTimeoutRef.current);
+          if (botChatIntervalRef.current) clearInterval(botChatIntervalRef.current);
         }
 
         // 4. 세부 라운드 및 그림 데이터 동기화
@@ -435,12 +663,18 @@ export default function GamePage() {
             setCanvasDataFromDb('');
             setAiImageSrc(null);
             clearCanvas();
+            timerEndTriggeredRef.current = false;
             
             if (amIDrawer) {
               addSystemMsg(`🎨 Round ${room.current_round} 시작! 제시어를 확인해 주세요.`);
               if (selectedMode === 'ai') {
                 triggerAiDrawing(room.current_keyword);
               }
+            }
+
+            // 방장인 경우 라운드 변경 시 봇 시뮬레이션 재가동
+            if (me && me.is_host) {
+              triggerBotGameplay(room.current_keyword);
             } else {
               addSystemMsg(`🎨 Round ${room.current_round} 시작! 출제자가 그림을 그리고 있습니다.`);
             }
@@ -518,6 +752,8 @@ export default function GamePage() {
   // 타이머 만료 시 흐름 제어 (방장 서버 연동 / 게스트 대기)
   const handleTimerEnd = async () => {
     if (currentScreen === 'screen-game' && isHost) {
+      if (timerEndTriggeredRef.current) return;
+      timerEndTriggeredRef.current = true;
       try {
         // 1. 먼저 DB에 정답 공개 로그 기록 삽입
         await fetch('/api/rooms/action', {
@@ -578,6 +814,10 @@ export default function GamePage() {
     cleanupAiGenerator();
     setChatLog([{ type: 'system-msg', text: '대기실로 돌아왔습니다. 다음 게임을 준비해 주세요.' }]);
     
+    // 봇 시뮬레이션 타이머 명시적 클리어
+    if (botGameplayTimeoutRef.current) clearTimeout(botGameplayTimeoutRef.current);
+    if (botChatIntervalRef.current) clearInterval(botChatIntervalRef.current);
+
     localRoundRef.current = 1;
     setCurrentRound(1);
     
@@ -711,53 +951,126 @@ export default function GamePage() {
 
     // 봇 정답 타이밍 설계 (10~25초 내에 무작위 시뮬레이션)
     const guessDelay = Math.floor(Math.random() * 15000) + 10000;
-    botGameplayTimeoutRef.current = setTimeout(() => {
-      if (currentScreen === 'screen-game') {
-        const correctBot = players.find(p => !p.isMe);
-        if (correctBot) {
-          appendFeed(correctBot.name, `${keyword}!`, 'correct-answer');
-          addSystemMsg(`🎉 ${correctBot.name}님이 정답을 맞혔습니다! (+100 pts)`);
-          
-          setPlayers(prev => prev.map(p => {
-            if (p.name === correctBot.name) {
-              return { ...p, score: p.score + 100 };
-            }
-            return p;
-          }));
+    botGameplayTimeoutRef.current = setTimeout(async () => {
+      // players 목록 중 봇(id가 BOT-으로 시작)이면서 아직 정답 상태가 아닌 봇 선별
+      const uncorrectBots = players.filter(p => p.id && p.id.startsWith('BOT-') && p.status !== '정답!');
+      if (uncorrectBots.length > 0 && isHost) {
+        // 정답을 맞추지 않은 봇 중 무작위 하나 선정
+        const correctBot = uncorrectBots[Math.floor(Math.random() * uncorrectBots.length)];
+        try {
+          await fetch('/api/rooms/action', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              roomCode,
+              playerId: correctBot.id, // 봇의 ID로 API를 보냄
+              action: 'guess',
+              payload: { guess: keyword }
+            })
+          });
+        } catch (err) {
+          console.error('Failed to trigger bot guess:', err);
         }
       }
     }, guessDelay);
 
     // 봇 잡담 시뮬레이터
     const chatQuotes = ['와 진짜 잘 그린다', '혹시 프라이팬인가?', '오리 같기도 하고...', '어려운데요 ㅋㅋㅋ', '지우개 지우는 거 보소', '사운드오브뮤직?'];
-    botChatIntervalRef.current = setInterval(() => {
-      const activeBots = players.filter(p => !p.isMe);
-      if (activeBots.length > 0) {
+    botChatIntervalRef.current = setInterval(async () => {
+      // 봇들만 필터링
+      const activeBots = players.filter(p => p.id && p.id.startsWith('BOT-'));
+      if (activeBots.length > 0 && isHost) {
         const randBot = activeBots[Math.floor(Math.random() * activeBots.length)];
         const randQuote = chatQuotes[Math.floor(Math.random() * chatQuotes.length)];
-        appendFeed(randBot.name, randQuote, 'chat-msg');
+        try {
+          await fetch('/api/rooms/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              roomCode,
+              playerId: randBot.id,
+              nickname: randBot.name,
+              message: randQuote,
+              type: 'chat'
+            })
+          });
+        } catch (err) {
+          console.error('Failed to send bot chat:', err);
+        }
       }
     }, 12000);
   };
 
   // 봇 추가 초대 핸들러
-  const inviteBot = () => {
+  const inviteBot = async () => {
     if (players.length >= 6) {
       alert('더 이상 플레이어를 초대할 수 없습니다. (최대 6명)');
       return;
     }
-    const availableBots = botPool.filter(bp => !players.some(p => p.name === bp.name));
-    if (availableBots.length > 0) {
-      const bot = availableBots[0];
-      setPlayers(prev => [...prev, {
-        name: bot.name,
-        avatar: bot.avatar,
-        score: bot.score,
-        status: bot.status,
-        isMe: false,
-        isOwner: false
-      }]);
-      addSystemMsg(`🐥 ${bot.name}님이 대기실에 입장했습니다.`);
+    try {
+      const res = await fetch('/api/rooms/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomCode,
+          playerId,
+          action: 'invite-bot',
+          payload: {}
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || '봇 초대 도중 오류가 발생했습니다.');
+      }
+    } catch (err) {
+      console.error('Failed to invite bot:', err);
+      alert('서버와 통신할 수 없습니다.');
+    }
+  };
+
+  // 플레이어 강퇴 핸들러
+  const kickPlayer = async (targetPlayerId, targetNickname) => {
+    if (!confirm(`${targetNickname}님을 정말로 강퇴하시겠습니까?`)) return;
+    try {
+      const res = await fetch('/api/rooms/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomCode,
+          playerId,
+          action: 'kick-player',
+          payload: { targetPlayerId }
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || '강퇴 처리에 실패했습니다.');
+      }
+    } catch (err) {
+      console.error('Failed to kick player:', err);
+      alert('서버와 통신할 수 없습니다.');
+    }
+  };
+
+  // 준비 상태 토글 핸들러
+  const toggleReady = async () => {
+    try {
+      const res = await fetch('/api/rooms/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomCode,
+          playerId,
+          action: 'toggle-ready'
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || '준비 상태 변경에 실패했습니다.');
+      }
+    } catch (err) {
+      console.error('Failed to toggle ready status:', err);
+      alert('서버와 통신할 수 없습니다.');
     }
   };
 
@@ -1031,12 +1344,27 @@ export default function GamePage() {
                 <h3 className="section-title">참여자 ({players.length} / 6명)</h3>
                 <div className="player-slots-list">
                   {players.map((p, idx) => (
-                    <div key={idx} className={`lobby-player-slot ${p.isMe ? 'is-me' : ''}`}>
+                    <div key={idx} className={`lobby-player-slot ${p.isMe ? 'is-me' : ''} ${p.rawStatus === 'ready' && !p.isOwner ? 'is-ready' : ''}`}>
                       <div className="slot-avatar">{p.avatar}</div>
                       <div className="slot-name-wrapper">
                         <span className="slot-name">{p.isMe ? `${nickname} (나)` : p.name}</span>
-                        {p.isOwner && <span className="slot-badge">방장</span>}
+                        {p.isOwner ? (
+                          <span className="slot-badge host-badge">방장</span>
+                        ) : (
+                          <span className={`slot-badge ready-badge ${p.rawStatus === 'ready' ? 'ready-ok' : 'ready-wait'}`}>
+                            {p.status}
+                          </span>
+                        )}
                       </div>
+                      {isHost && !p.isMe && (
+                        <button
+                          className="kick-player-btn-absolute"
+                          onClick={() => kickPlayer(p.id, p.name)}
+                          title="강퇴하기"
+                        >
+                          ×
+                        </button>
+                      )}
                     </div>
                   ))}
                   {Array.from({ length: 6 - players.length }).map((_, idx) => (
@@ -1091,7 +1419,7 @@ export default function GamePage() {
                       boxShadow: selectedMode === 'ai' ? '0 4px 0 0 var(--color-secondary)' : 'none'
                     }}
                   >
-                    <h4 style={{ margin: '0 0 6px 0', fontSize: '0.95rem' }}>⚡ AI 드로잉 모드 (SD-Turbo 연동)</h4>
+                    <h4 style={{ margin: '0 0 6px 0', fontSize: '0.95rem' }}>⚡ AI 드로잉 모드</h4>
                     <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--color-gray-dark)', lineHeight: '1.4' }}>실시간 AI 이미지 생성을 활용하여 프롬프트를 입력하면 AI가 실시간으로 그림을 그려내는 모드입니다.</p>
                   </div>
                 </div>
@@ -1124,27 +1452,68 @@ export default function GamePage() {
               </section>
             </div>
 
-            <footer className="waiting-room-footer">
-              <button className="btn-secondary" onClick={() => setCurrentScreen('screen-landing')}>
-                ◀ 뒤로 (Lobby)
-              </button>
-              <div className="footer-actions-right">
-                {isHost ? (
-                  <>
-                    <button className="btn-secondary btn-bounce" onClick={inviteBot}>
-                      ➕ 초대하기 (봇 추가)
-                    </button>
-                    <button className="btn-primary btn-bounce" onClick={startGame}>
-                      ▶ 게임 시작 (Start)
-                    </button>
-                  </>
-                ) : (
-                  <span style={{ fontSize: '0.95rem', color: 'var(--color-gray-dark)', fontWeight: 700, alignSelf: 'center', marginRight: '10px' }}>
-                    방장이 게임을 시작하기를 기다리는 중... ⏳
-                  </span>
-                )}
-              </div>
-            </footer>
+            {(() => {
+              const guestPlayers = players.filter(p => !p.isOwner);
+              const isAllReady = guestPlayers.length === 0 || guestPlayers.every(p => p.rawStatus === 'ready');
+              const myPlayerObj = players.find(p => p.isMe);
+              const myReadyStatus = myPlayerObj ? myPlayerObj.rawStatus : 'waiting';
+              return (
+                <footer className="waiting-room-footer">
+                  <button className="btn-secondary" onClick={() => setCurrentScreen('screen-landing')}>
+                    ◀ 뒤로 (Lobby)
+                  </button>
+                  <div className="footer-actions-right" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
+                    {isHost ? (
+                      <>
+                        <div style={{ display: 'flex', gap: '10px' }}>
+                          <button className="btn-secondary btn-bounce" onClick={inviteBot}>
+                            ➕ 초대하기 (봇 추가)
+                          </button>
+                          <button 
+                            className="btn-primary btn-bounce" 
+                            onClick={startGame}
+                            disabled={!isAllReady}
+                            style={{
+                              opacity: isAllReady ? 1 : 0.5,
+                              cursor: isAllReady ? 'pointer' : 'not-allowed',
+                              backgroundColor: isAllReady ? 'var(--color-primary)' : 'var(--color-gray-dark)'
+                            }}
+                          >
+                            ▶ 게임 시작 (Start)
+                          </button>
+                        </div>
+                        {!isAllReady && (
+                          <span style={{ fontSize: '0.78rem', color: 'var(--color-danger)', fontWeight: 800, marginTop: '2px' }}>
+                            ⚠️ 모든 참가자가 준비를 완료해야 시작할 수 있습니다.
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <button 
+                          className="btn-bounce"
+                          onClick={toggleReady}
+                          style={{
+                            backgroundColor: myReadyStatus === 'ready' ? 'var(--color-danger)' : 'var(--color-success)',
+                            color: 'white',
+                            padding: '10px 20px',
+                            fontSize: '0.9rem',
+                            boxShadow: 'var(--shadow-flat)',
+                            borderRadius: '12px',
+                            border: '3px solid var(--color-border)'
+                          }}
+                        >
+                          {myReadyStatus === 'ready' ? '❌ 준비 취소' : '✅ 준비 완료'}
+                        </button>
+                        <span style={{ fontSize: '0.95rem', color: 'var(--color-gray-dark)', fontWeight: 700 }}>
+                          방장이 게임을 시작하기를 기다리는 중... ⏳
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </footer>
+              );
+            })()}
 
           </div>
         </main>

@@ -417,7 +417,7 @@ button {
 
 .waiting-room-body {
   display: grid;
-  grid-template-columns: 240px 1fr 280px;
+  grid-template-columns: 260px 1fr 280px;
   gap: 20px;
   min-height: 0;
 }
@@ -439,12 +439,12 @@ button {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 480px;
-  overflow-y: auto;
-  padding-right: 4px;
+  overflow: visible;
+  padding: 10px 10px 10px 0;
 }
 
 .lobby-player-slot {
+  position: relative;
   background-color: var(--color-purple-bg);
   border: 2.5px solid var(--color-border);
   border-radius: 12px;
@@ -2254,4 +2254,72 @@ button {
   font-weight: 700;
   color: var(--color-gray-dark);
   margin-left: auto;
+}
+
+/* 대기실 강퇴 버튼 */
+.kick-player-btn-absolute {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  width: 20px;
+  height: 20px;
+  background-color: var(--color-danger);
+  color: white;
+  border: 1.5px solid var(--color-border);
+  border-radius: 50%;
+  font-size: 0.8rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 1px 0 0 var(--color-border);
+  transition: all 0.1s ease-out;
+  padding: 0;
+  line-height: 1;
+}
+
+.kick-player-btn-absolute:hover {
+  background-color: #E53E3E;
+  transform: scale(1.1);
+}
+
+.kick-player-btn-absolute:active {
+  transform: scale(0.95);
+  box-shadow: none;
+}
+
+/* 대기방 준비완료 뱃지 및 토글 스타일 */
+.ready-badge {
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1.5px solid var(--color-border);
+  color: white;
+  text-shadow: 1px 1px 0px rgba(0,0,0,0.15);
+}
+
+.ready-badge.ready-ok {
+  background-color: var(--color-success);
+}
+
+.ready-badge.ready-wait {
+  background-color: var(--color-gray-dark);
+}
+
+/* 준비완료 상태인 플레이어 카드의 대기방 카드 스타일 효과 */
+.lobby-player-slot.is-ready {
+  background-color: #F0FDF4;
+  border-color: var(--color-success);
+  box-shadow: 0 3px 0 0 var(--color-success);
+}
+
+/* 대기방 준비완료 버튼 호버 애니메이션 */
+.btn-bounce.btn-ready-ok:hover {
+  background-color: #38A169 !important;
+}
+
+.btn-bounce.btn-ready-cancel:hover {
+  background-color: #E53E3E !important;
 }
