@@ -522,6 +522,55 @@ export async function POST(request) {
         break;
       }
 
+      case 'transfer-host': {
+        if (!player.is_host) {
+          await client.end();
+          return NextResponse.json({ error: '방장만 방장 권한을 넘길 수 있습니다.' }, { status: 403 });
+        }
+
+        const { targetPlayerId } = payload;
+        if (!targetPlayerId) {
+          await client.end();
+          return NextResponse.json({ error: '위임 대상 플레이어 ID가 유효하지 않습니다.' }, { status: 400 });
+        }
+
+        if (targetPlayerId === playerId) {
+          await client.end();
+          return NextResponse.json({ error: '자기 자신에게는 방장을 넘길 수 없습니다.' }, { status: 400 });
+        }
+
+        if (targetPlayerId.startsWith('BOT-')) {
+          await client.end();
+          return NextResponse.json({ error: '봇에게는 방장을 넘길 수 없습니다.' }, { status: 400 });
+        }
+
+        // 위임 대상 플레이어가 해당 방에 실제로 존재하는지 확인
+        const targetCheck = await client.query(
+          'SELECT nickname FROM players WHERE id = $1 AND room_code = $2 AND is_active = TRUE',
+          [targetPlayerId, normalizedCode]
+        );
+
+        if (targetCheck.rows.length === 0) {
+          await client.end();
+          return NextResponse.json({ error: '대상 플레이어가 존재하지 않거나 이미 방을 나갔습니다.' }, { status: 404 });
+        }
+
+        const targetNickname = targetCheck.rows[0].nickname;
+
+        await client.query('BEGIN');
+
+        await client.query("UPDATE players SET is_host = FALSE WHERE room_code = $1", [normalizedCode]);
+        await client.query("UPDATE players SET is_host = TRUE WHERE id = $1 AND room_code = $2", [targetPlayerId, normalizedCode]);
+
+        await client.query(
+          "INSERT INTO chat_messages (room_code, player_id, nickname, message, type) VALUES ($1, 'system', 'System', $2, 'system-msg')",
+          [normalizedCode, `👑 ${targetNickname}님이 새로운 방장이 되었습니다.`]
+        );
+
+        await client.query('COMMIT');
+        break;
+      }
+
       default:
         await client.end();
         return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });

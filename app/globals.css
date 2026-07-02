@@ -2388,37 +2388,31 @@ button {
   margin-left: auto;
 }
 
-/* 대기실 강퇴 버튼 */
-.kick-player-btn-absolute {
+/* 대기실 플레이어 슬롯: 방장만 클릭 가능(프로필 액션 창 오픈) */
+.lobby-player-slot.is-clickable {
+  cursor: pointer;
+}
+
+.lobby-player-slot.is-clickable:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 0 0 var(--color-border);
+}
+
+/* 아바타 + 왕관 뱃지 래퍼 (방장 표시용) */
+.slot-avatar-wrapper {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.host-crown-badge {
   position: absolute;
   top: -10px;
-  right: -10px;
-  width: 20px;
-  height: 20px;
-  background-color: var(--color-danger);
-  color: white;
-  border: 1.5px solid var(--color-border);
-  border-radius: 50%;
-  font-size: 0.8rem;
-  font-weight: 800;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  box-shadow: 0 1px 0 0 var(--color-border);
-  transition: all 0.1s ease-out;
-  padding: 0;
+  left: 50%;
+  transform: translateX(-50%) rotate(-8deg);
+  font-size: 0.85rem;
   line-height: 1;
-}
-
-.kick-player-btn-absolute:hover {
-  background-color: #E53E3E;
-  transform: scale(1.1);
-}
-
-.kick-player-btn-absolute:active {
-  transform: scale(0.95);
-  box-shadow: none;
+  filter: drop-shadow(0 1px 0 var(--color-border));
+  pointer-events: none;
 }
 
 /* 대기방 준비완료 뱃지 및 토글 스타일 */
@@ -2626,4 +2620,76 @@ button {
   font-size: 0.82rem;
   color: var(--color-gray-dark);
   flex-shrink: 0;
+}
+
+/* 위험 액션(강퇴 등) 버튼: 기존 버튼 톤에 맞춘 빨간 계열 */
+.btn-danger {
+  background-color: var(--color-danger);
+  color: white;
+  padding: 12px 24px;
+  box-shadow: var(--shadow-flat);
+}
+
+.btn-danger:hover {
+  background-color: #E53E3E;
+  transform: translateY(2px);
+  box-shadow: var(--shadow-flat-hover);
+}
+
+.btn-danger:active {
+  transform: translateY(4px);
+  box-shadow: none;
+}
+
+/* ==========================================================================
+   PLAYER PROFILE MODAL (대기실에서 프로필 클릭 시 방장 주기 / 강퇴하기)
+   ========================================================================== */
+.player-profile-card {
+  width: 320px;
+}
+
+.player-profile-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 22px;
+}
+
+.player-profile-avatar-wrapper {
+  position: relative;
+}
+
+.player-profile-avatar {
+  width: 72px;
+  height: 72px;
+  background-color: white;
+  border: 3px solid var(--color-border);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.2rem;
+  box-shadow: var(--shadow-flat);
+}
+
+.player-profile-avatar-wrapper .host-crown-badge {
+  font-size: 1.4rem;
+  top: -16px;
+}
+
+.player-profile-name {
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.player-profile-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.player-profile-actions button {
+  flex: 1;
+  padding: 10px 12px;
+  font-size: 0.85rem;
 }

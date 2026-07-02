@@ -147,6 +147,43 @@ function SoundSettingsModal({
   );
 }
 
+// 대기실에서 다른 참가자의 프로필을 클릭했을 때 뜨는 창 (방장 위임 / 강퇴 액션 제공)
+function PlayerProfileModal({ player, onClose, onTransferHost, onKick }) {
+  return (
+    <div className="sound-modal-overlay" onClick={onClose}>
+      <div className="sound-modal-card player-profile-card" onClick={(e) => e.stopPropagation()}>
+        <div className="sound-modal-header">
+          <h3>참가자 정보</h3>
+          <button type="button" className="sound-modal-close" onClick={onClose} aria-label="닫기">✕</button>
+        </div>
+        <div className="player-profile-body">
+          <div className="player-profile-avatar-wrapper">
+            <div className="player-profile-avatar">{player.avatar}</div>
+            {player.isOwner && <span className="host-crown-badge" title="방장">👑</span>}
+          </div>
+          <p className="player-profile-name">{player.name}</p>
+        </div>
+        <div className="player-profile-actions">
+          <button
+            type="button"
+            className="btn-secondary btn-bounce"
+            onClick={() => onTransferHost(player.id, player.name)}
+          >
+            👑 방장 주기
+          </button>
+          <button
+            type="button"
+            className="btn-danger btn-bounce"
+            onClick={() => onKick(player.id, player.name)}
+          >
+            🚫 강퇴하기
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function GamePage() {
   // ==========================================
   // AI Image Generator Configuration & State
@@ -211,6 +248,9 @@ export default function GamePage() {
   const [sfxMuted, setSfxMuted] = useState(false);
   const [showSoundSettings, setShowSoundSettings] = useState(false);
 
+  // 대기실에서 클릭하여 프로필 액션 창(방장 주기/강퇴하기)을 띄운 대상 플레이어
+  const [profileTarget, setProfileTarget] = useState(null);
+
   // ==========================================
   // 2. React Refs 선언 (Canvas, Scroll, Bot interval)
   // ==========================================
@@ -232,8 +272,16 @@ export default function GamePage() {
   // 대기실/인게임 음악이 동시에 겹쳐 들리는 문제를 원천 차단한다.
   const musicAudioRef = useRef(null);
   const musicTrackRef = useRef('/sounds/Title.mp3');
-  const clickAudioRef = useRef(null);
-  
+  const clickAudioRef = useRef(null); // Web Audio API 초기화 전/실패 시 사용하는 폴백용 엘리먼트
+  const winAudioRef = useRef(null);
+
+  // 클릭 효과음을 지연 없이 재생하기 위한 Web Audio API 리소스
+  // (오디오 엘리먼트를 재사용해 currentTime을 되감으면 디코더가 재탐색을 하면서 체감 지연이 생기므로,
+  //  미리 디코딩해둔 버퍼를 매 클릭마다 새 소스 노드로 즉시 재생한다.)
+  const audioCtxRef = useRef(null);
+  const clickBufferRef = useRef(null);
+  const clickGainRef = useRef(null);
+
   // 봇 게임 루프 상태 보존용 refs
   const botGameplayTimeoutRef = useRef(null);
   const botChatIntervalRef = useRef(null);
@@ -643,6 +691,29 @@ export default function GamePage() {
     fetchWords();
   }, []);
 
+  // 클릭 효과음(click.mp3)을 Web Audio API 버퍼로 미리 디코딩해둔다.
+  // <audio> 엘리먼트 하나를 재사용하며 currentTime을 되감는 방식은 디코더 재탐색 때문에
+  // 클릭 시 소리가 살짝 늦게 나는 문제가 있어, 매 클릭마다 새 버퍼 소스 노드로 지연 없이 재생한다.
+  useEffect(() => {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
+
+    const ctx = new AudioContextClass();
+    const gain = ctx.createGain();
+    gain.gain.value = sfxMuted ? 0 : sfxVolume / 100;
+    gain.connect(ctx.destination);
+    audioCtxRef.current = ctx;
+    clickGainRef.current = gain;
+
+    fetch('/sounds/click.mp3')
+      .then((res) => res.arrayBuffer())
+      .then((buf) => ctx.decodeAudioData(buf))
+      .then((decoded) => { clickBufferRef.current = decoded; })
+      .catch((err) => console.error('클릭 효과음 디코딩 실패:', err));
+
+    return () => { ctx.close().catch(() => {}); };
+  }, []);
+
   // 배경음악 재생 제어: 화면별로 어떤 트랙을 틀지 결정하고, 오디오 엘리먼트 하나만 사용해서
   // 트랙을 전환한다 (엘리먼트를 분리해두면 전환 타이밍에 따라 두 곡이 겹쳐 들릴 수 있음).
   useEffect(() => {
@@ -665,27 +736,44 @@ export default function GamePage() {
   }, [currentScreen]);
 
   // 배경음악 볼륨 반영 (0 = 무음, 100 = 최대음량, 음소거 아이콘을 누르면 볼륨과 무관하게 무음)
+  // 결과 화면의 win.mp3도 배경음악과 같은 볼륨/음소거 설정을 공유한다.
   useEffect(() => {
     const audio = musicAudioRef.current;
-    if (!audio) return;
-    audio.volume = musicMuted ? 0 : musicVolume / 100;
+    if (audio) audio.volume = musicMuted ? 0 : musicVolume / 100;
+    const win = winAudioRef.current;
+    if (win) win.volume = musicMuted ? 0 : musicVolume / 100;
   }, [musicVolume, musicMuted]);
 
   // 효과음(click.mp3) 볼륨 반영 (0 = 무음, 100 = 최대음량, 음소거 아이콘을 누르면 볼륨과 무관하게 무음)
   useEffect(() => {
+    const gain = clickGainRef.current;
+    if (gain) gain.gain.value = sfxMuted ? 0 : sfxVolume / 100;
     const audio = clickAudioRef.current;
-    if (!audio) return;
-    audio.volume = sfxMuted ? 0 : sfxVolume / 100;
+    if (audio) audio.volume = sfxMuted ? 0 : sfxVolume / 100;
   }, [sfxVolume, sfxMuted]);
 
   // 클릭 효과음 즉시 재생 + 브라우저 자동재생 정책으로 막혔던 배경음악 재개 시도 (버튼 클릭 시에만 재생)
   const playClickSound = (e) => {
     if (!e.target.closest('button')) return;
-    const click = clickAudioRef.current;
-    if (click) {
-      click.currentTime = 0;
-      click.play().catch(() => {});
+
+    const ctx = audioCtxRef.current;
+    const buffer = clickBufferRef.current;
+    if (ctx && buffer) {
+      // Web Audio API: 새 버퍼 소스 노드를 즉시 재생 (되감기/재탐색이 없어 지연이 없다)
+      if (ctx.state === 'suspended') ctx.resume();
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(clickGainRef.current);
+      source.start(0);
+    } else {
+      // Web Audio 버퍼가 아직 준비되지 않은 극초반 폴백
+      const click = clickAudioRef.current;
+      if (click) {
+        click.currentTime = 0;
+        click.play().catch(() => {});
+      }
     }
+
     const music = musicAudioRef.current;
     if (music && music.paused && MUSIC_TRACK_BY_SCREEN[currentScreen]) {
       music.play().catch(() => {});
@@ -853,6 +941,15 @@ export default function GamePage() {
           // 봇 시뮬레이션 타이머 정리
           if (botGameplayTimeoutRef.current) clearTimeout(botGameplayTimeoutRef.current);
           if (botChatIntervalRef.current) clearInterval(botChatIntervalRef.current);
+
+          // 결과 화면 진입: 배경음악은 완전히 멈추고 win.mp3를 한 번만 재생
+          const music = musicAudioRef.current;
+          if (music) music.pause();
+          const win = winAudioRef.current;
+          if (win) {
+            win.currentTime = 0;
+            win.play().catch(() => {});
+          }
         }
 
         // 4. 세부 라운드 및 그림 데이터 동기화
@@ -1259,9 +1356,37 @@ export default function GamePage() {
       const data = await res.json();
       if (!res.ok) {
         alert(data.error || '강퇴 처리에 실패했습니다.');
+      } else {
+        setProfileTarget(null);
       }
     } catch (err) {
       console.error('Failed to kick player:', err);
+      alert('서버와 통신할 수 없습니다.');
+    }
+  };
+
+  // 방장 위임 핸들러
+  const transferHost = async (targetPlayerId, targetNickname) => {
+    if (!confirm(`${targetNickname}님에게 방장을 넘기시겠습니까?`)) return;
+    try {
+      const res = await fetch('/api/rooms/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomCode,
+          playerId,
+          action: 'transfer-host',
+          payload: { targetPlayerId }
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || '방장 위임에 실패했습니다.');
+      } else {
+        setProfileTarget(null);
+      }
+    } catch (err) {
+      console.error('Failed to transfer host:', err);
       alert('서버와 통신할 수 없습니다.');
     }
   };
@@ -1427,6 +1552,7 @@ export default function GamePage() {
       {/* 사운드 재생용 오디오 엘리먼트 (화면 전환에도 끊기지 않도록 상시 마운트) */}
       <audio ref={musicAudioRef} src="/sounds/Title.mp3" loop preload="auto" />
       <audio ref={clickAudioRef} src="/sounds/click.mp3" preload="auto" />
+      <audio ref={winAudioRef} src="/sounds/win.mp3" preload="auto" />
 
       {showSoundSettings && (
         <SoundSettingsModal
@@ -1439,6 +1565,15 @@ export default function GamePage() {
           onSfxVolumeChange={(val) => { setSfxVolume(val); setSfxMuted(false); }}
           onToggleSfxMute={() => setSfxMuted(m => !m)}
           onClose={() => setShowSoundSettings(false)}
+        />
+      )}
+
+      {profileTarget && (
+        <PlayerProfileModal
+          player={profileTarget}
+          onClose={() => setProfileTarget(null)}
+          onTransferHost={transferHost}
+          onKick={kickPlayer}
         />
       )}
 
@@ -1599,30 +1734,32 @@ export default function GamePage() {
                   )}
                 </div>
                 <div className="player-slots-list">
-                  {players.map((p, idx) => (
-                    <div key={idx} className={`lobby-player-slot ${p.isMe ? 'is-me' : ''} ${p.rawStatus === 'ready' && !p.isOwner ? 'is-ready' : ''}`}>
-                      <div className="slot-avatar">{p.avatar}</div>
-                      <div className="slot-name-wrapper">
-                        <span className="slot-name">{p.isMe ? `${nickname} (나)` : p.name}</span>
-                        {p.isOwner ? (
-                          <span className="slot-badge host-badge">방장</span>
-                        ) : (
-                          <span className={`slot-badge ready-badge ${p.rawStatus === 'ready' ? 'ready-ok' : 'ready-wait'}`}>
-                            {p.status}
-                          </span>
-                        )}
+                  {players.map((p, idx) => {
+                    const clickable = isHost && !p.isMe;
+                    return (
+                      <div
+                        key={idx}
+                        className={`lobby-player-slot ${p.isMe ? 'is-me' : ''} ${p.rawStatus === 'ready' && !p.isOwner ? 'is-ready' : ''} ${clickable ? 'is-clickable' : ''}`}
+                        onClick={() => { if (clickable) setProfileTarget(p); }}
+                        title={clickable ? '클릭하여 방장 주기/강퇴하기' : undefined}
+                      >
+                        <div className="slot-avatar-wrapper">
+                          <div className="slot-avatar">{p.avatar}</div>
+                          {p.isOwner && <span className="host-crown-badge" title="방장">👑</span>}
+                        </div>
+                        <div className="slot-name-wrapper">
+                          <span className="slot-name">{p.isMe ? `${nickname} (나)` : p.name}</span>
+                          {p.isOwner ? (
+                            <span className="slot-badge host-badge">방장</span>
+                          ) : (
+                            <span className={`slot-badge ready-badge ${p.rawStatus === 'ready' ? 'ready-ok' : 'ready-wait'}`}>
+                              {p.status}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      {isHost && !p.isMe && (
-                        <button
-                          className="kick-player-btn-absolute"
-                          onClick={() => kickPlayer(p.id, p.name)}
-                          title="강퇴하기"
-                        >
-                          ×
-                        </button>
-                      )}
-                    </div>
-                  ))}
+                    );
+                  })}
                   {Array.from({ length: Math.max(0, maxPlayers - players.length) }).map((_, idx) => (
                     <div key={idx} className="lobby-player-slot is-empty">
                       <div className="slot-avatar">?</div>
