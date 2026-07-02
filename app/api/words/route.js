@@ -3,6 +3,8 @@ import pg from 'pg';
 import fs from 'fs';
 import path from 'path';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   const dbUrl = process.env.DATABASE_URL;
   
@@ -31,15 +33,22 @@ export async function GET() {
     }
   }
 
-  // 2. 로컬 단어모음.csv 파일 기반 폴백 공급 (Neon DB 미지정/오류 대응)
+  // 2. 로컬 words.csv 파일 기반 폴백 공급 (Neon DB 미지정/오류 대응)
   try {
-    const csvPath = path.join(process.cwd(), '단어모음.csv');
+    const csvPath = path.join(process.cwd(), 'words.csv');
     if (fs.existsSync(csvPath)) {
       const data = fs.readFileSync(csvPath, 'utf8');
-      const words = data
-        .split(/[,\r\n]+/)
-        .map(w => w.trim())
-        .filter(w => w.length > 0);
+      const lines = data.split(/\r?\n/);
+      const words = [];
+      
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        const cols = line.split(',');
+        if (cols.length > 1) {
+          words.push(cols[1].trim()); // 두 번째 열 (word) 추출
+        }
+      }
       
       // 150개 단어 무작위 셔플 추출
       const shuffled = words.sort(() => 0.5 - Math.random()).slice(0, 150);
