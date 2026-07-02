@@ -38,6 +38,7 @@ async function runMigration() {
         game_mode VARCHAR(20) DEFAULT 'human',
         current_round INT DEFAULT 1,
         max_round INT DEFAULT 5,
+        round_time INT DEFAULT 45,
         current_keyword VARCHAR(100) DEFAULT '',
         current_drawer_id VARCHAR(50) DEFAULT '',
         canvas_data TEXT DEFAULT '',

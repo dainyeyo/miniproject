@@ -709,6 +709,92 @@ button {
   width: 100%;
 }
 
+/* Custom List Dropdown (라운드 수 / 제한시간 설정) */
+.custom-dropdown-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.custom-dropdown-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 2.5px solid var(--color-border);
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--color-text);
+  outline: none;
+  background-color: var(--color-purple-bg);
+  box-shadow: 0 3px 0 0 var(--color-border);
+  width: 100%;
+  cursor: pointer;
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.custom-dropdown-trigger:hover:not(:disabled) {
+  background-color: var(--color-purple-light);
+}
+
+.custom-dropdown-trigger:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 0 var(--color-border);
+}
+
+.custom-dropdown-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.custom-dropdown-arrow {
+  font-size: 0.75rem;
+  transition: transform 0.15s ease;
+}
+
+.custom-dropdown-trigger.is-open .custom-dropdown-arrow {
+  transform: rotate(180deg);
+}
+
+.custom-dropdown-list {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  z-index: 50;
+  max-height: 240px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  background-color: var(--color-card-bg);
+  border: 2.5px solid var(--color-border);
+  border-radius: 12px;
+  box-shadow: 0 4px 0 0 var(--color-border);
+}
+
+.custom-dropdown-item {
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--color-text);
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+
+.custom-dropdown-item:hover {
+  background-color: var(--color-purple-bg);
+}
+
+.custom-dropdown-item.selected {
+  background-color: var(--color-primary);
+  color: var(--color-text);
+}
+
 /* Lobby Footer Buttons */
 .waiting-room-footer {
   display: flex;

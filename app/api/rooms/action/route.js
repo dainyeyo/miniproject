@@ -72,10 +72,10 @@ export async function POST(request) {
           return NextResponse.json({ error: '방장만 방 설정을 변경할 수 있습니다.' }, { status: 403 });
         }
 
-        const { gameMode, maxRound } = payload;
+        const { gameMode, maxRound, roundTime } = payload;
         await client.query(
-          'UPDATE game_rooms SET game_mode = COALESCE($1, game_mode), max_round = COALESCE($2, max_round) WHERE room_code = $3',
-          [gameMode, maxRound, normalizedCode]
+          'UPDATE game_rooms SET game_mode = COALESCE($1, game_mode), max_round = COALESCE($2, max_round), round_time = COALESCE($3, round_time) WHERE room_code = $4',
+          [gameMode, maxRound, roundTime, normalizedCode]
         );
         break;
       }
@@ -145,18 +145,18 @@ export async function POST(request) {
           return NextResponse.json({ error: '방장만 게임을 시작할 수 있습니다.' }, { status: 403 });
         }
 
-        const { maxRound, keyword } = payload;
-        
+        const { maxRound, roundTime, keyword } = payload;
+
         // 순서대로 첫 출제자(drawer) 지정 (닉네임 기준 1번째 플레이어, 봇은 제외)
         const playersRes = await client.query("SELECT id FROM players WHERE room_code = $1 AND id NOT LIKE 'BOT-%' ORDER BY nickname ASC", [normalizedCode]);
         const drawerId = playersRes.rows[0].id;
 
         await client.query('BEGIN');
-        
+
         // 방 상태를 게임중으로 업데이트하고 키워드, 출제자 정보 세팅
         await client.query(
-          'UPDATE game_rooms SET status = $1, current_round = 1, max_round = $2, current_keyword = $3, current_drawer_id = $4, canvas_data = $5, ai_image_url = $6 WHERE room_code = $7',
-          ['game', maxRound || 5, keyword, drawerId, '', '', normalizedCode]
+          'UPDATE game_rooms SET status = $1, current_round = 1, max_round = $2, round_time = $3, current_keyword = $4, current_drawer_id = $5, canvas_data = $6, ai_image_url = $7 WHERE room_code = $8',
+          ['game', maxRound || 5, roundTime || 45, keyword, drawerId, '', '', normalizedCode]
         );
 
         // 플레이어들 상태 초기화

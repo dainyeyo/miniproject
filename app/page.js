@@ -4,9 +4,54 @@ import React, { useState, useEffect, useRef } from 'react';
 
 // Neon DB 연동 실패 시 사용할 최후의 로컬 폴백 단어 풀 지정
 const DEFAULT_FALLBACK_WORDS = [
-  '계란 후라이', '달걀말이', '오므라이스', '닭고기', '병아리', '달걀껍질', '둥지', 
+  '계란 후라이', '달걀말이', '오므라이스', '닭고기', '병아리', '달걀껍질', '둥지',
   '사운드오브뮤직', '클래식음악', '교향곡', '피아노', '바이올린', '첼로', '트럼펫'
 ];
+
+// 대기실 게임 규칙 설정용 커스텀 리스트 드롭다운 (기존 만화풍 UI 톤에 맞춘 펼침 목록)
+function SettingsDropdown({ label, value, displayValue, options, disabled, onSelect }) {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClickOutside = (e) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [open]);
+
+  return (
+    <div className="custom-option">
+      <label>{label}</label>
+      <div className="custom-dropdown-wrapper" ref={wrapperRef}>
+        <button
+          type="button"
+          className={`custom-dropdown-trigger ${open ? 'is-open' : ''}`}
+          disabled={disabled}
+          onClick={() => setOpen(o => !o)}
+        >
+          <span>{displayValue}</span>
+          <span className="custom-dropdown-arrow">▾</span>
+        </button>
+        {open && (
+          <div className="custom-dropdown-list">
+            {options.map((opt) => (
+              <div
+                key={opt.value}
+                className={`custom-dropdown-item ${opt.value === value ? 'selected' : ''}`}
+                onClick={() => { onSelect(opt.value); setOpen(false); }}
+              >
+                {opt.label}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function GamePage() {
   // ==========================================
@@ -36,6 +81,7 @@ export default function GamePage() {
   const [currentKeyword, setCurrentKeyword] = useState('계란 후라이');
   const [currentRound, setCurrentRound] = useState(1);
   const [maxRound, setMaxRound] = useState(5);
+  const [roundTime, setRoundTime] = useState(45);
   
   // 플레이어 상태
   const [myScore, setMyScore] = useState(0);
@@ -619,6 +665,7 @@ export default function GamePage() {
         if (me && !me.is_host) {
           if (room.game_mode) setSelectedMode(room.game_mode);
           if (room.max_round) setMaxRound(room.max_round);
+          if (room.round_time) setRoundTime(room.round_time);
         }
 
         // 2. 출제자 상태 업데이트
@@ -631,8 +678,8 @@ export default function GamePage() {
           setCurrentScreen('screen-waiting');
         } else if (room.status === 'game' && currentScreen !== 'screen-game') {
           setCurrentScreen('screen-game');
-          setTimerSeconds(45);
-          setTimerMax(45);
+          setTimerSeconds(room.round_time || 45);
+          setTimerMax(room.round_time || 45);
           if (amIDrawer) {
             if (selectedMode === 'ai') {
               triggerAiDrawing(room.current_keyword);
@@ -653,13 +700,14 @@ export default function GamePage() {
         // 4. 세부 라운드 및 그림 데이터 동기화
         if (room.status === 'game') {
           setMaxRound(room.max_round);
+          setRoundTime(room.round_time || 45);
 
           // 라운드가 변경되었을 때 타이머 및 화면 리셋
           if (room.current_round !== localRoundRef.current) {
             localRoundRef.current = room.current_round;
             setCurrentRound(room.current_round);
-            setTimerSeconds(45);
-            setTimerMax(45);
+            setTimerSeconds(room.round_time || 45);
+            setTimerMax(room.round_time || 45);
             setCanvasDataFromDb('');
             setAiImageSrc(null);
             clearCanvas();
@@ -734,15 +782,15 @@ export default function GamePage() {
           roomCode,
           playerId,
           action: 'start-game',
-          payload: { maxRound, keyword: randWord }
+          payload: { maxRound, roundTime, keyword: randWord }
         })
       });
-      
+
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '게임 시작 요청에 실패했습니다.');
 
-      setTimerSeconds(45);
-      setTimerMax(45);
+      setTimerSeconds(roundTime);
+      setTimerMax(roundTime);
       setCurrentScreen('screen-game');
     } catch (err) {
       alert(err.message);
@@ -840,7 +888,7 @@ export default function GamePage() {
   };
 
   // 방 설정 동기화 업데이트 API 호출 (방장용)
-  const updateRoomSettings = async (newMode, newMaxRound) => {
+  const updateRoomSettings = async (newMode, newMaxRound, newRoundTime) => {
     if (!roomCode || !playerId) return;
     try {
       await fetch('/api/rooms/action', {
@@ -852,7 +900,8 @@ export default function GamePage() {
           action: 'update-settings',
           payload: {
             gameMode: newMode || selectedMode,
-            maxRound: newMaxRound || maxRound
+            maxRound: newMaxRound || maxRound,
+            roundTime: newRoundTime || roundTime
           }
         })
       });
@@ -1430,24 +1479,28 @@ export default function GamePage() {
                 <h3 className="section-title" style={{ margin: 0 }}>게임 규칙 설정</h3>
                 
                 <div className="custom-settings-panel">
-                  <div className="custom-option">
-                    <label>라운드 수</label>
-                    <select 
-                      value={`${maxRound} 라운드`} 
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value, 10);
-                        if (isHost) {
-                          setMaxRound(val);
-                          updateRoomSettings(null, val);
-                        }
-                      }}
-                      disabled={!isHost}
-                    >
-                      <option value="3 라운드">3 라운드</option>
-                      <option value="5 라운드">5 라운드</option>
-                      <option value="8 라운드">8 라운드</option>
-                    </select>
-                  </div>
+                  <SettingsDropdown
+                    label="라운드 수"
+                    value={maxRound}
+                    displayValue={`${maxRound} 라운드`}
+                    disabled={!isHost}
+                    options={Array.from({ length: 15 }, (_, i) => i + 1).map((n) => ({ value: n, label: `${n} 라운드` }))}
+                    onSelect={(val) => {
+                      setMaxRound(val);
+                      updateRoomSettings(null, val, null);
+                    }}
+                  />
+                  <SettingsDropdown
+                    label="라운드 제한시간"
+                    value={roundTime}
+                    displayValue={`${roundTime}초`}
+                    disabled={!isHost}
+                    options={[30, 45, 60, 90, 120].map((s) => ({ value: s, label: `${s}초` }))}
+                    onSelect={(val) => {
+                      setRoundTime(val);
+                      updateRoomSettings(null, null, val);
+                    }}
+                  />
                 </div>
               </section>
             </div>
