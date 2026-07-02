@@ -33,9 +33,9 @@ export async function GET() {
     }
   }
 
-  // 2. 로컬 words.csv 파일 기반 폴백 공급 (Neon DB 미지정/오류 대응)
+  // 2. 로컬 words_sorted.csv 파일 기반 폴백 공급 (Neon DB 미지정/오류 대응)
   try {
-    const csvPath = path.join(process.cwd(), 'words.csv');
+    const csvPath = path.join(process.cwd(), 'words_sorted.csv');
     if (fs.existsSync(csvPath)) {
       const data = fs.readFileSync(csvPath, 'utf8');
       const lines = data.split(/\r?\n/);
