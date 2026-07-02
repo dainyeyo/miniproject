@@ -1749,7 +1749,10 @@ export default function GamePage() {
                       </>
                     ) : (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <button 
+                        <span style={{ fontSize: '0.95rem', color: 'var(--color-gray-dark)', fontWeight: 700 }}>
+                          방장이 게임을 시작하기를 기다리는 중... ⏳
+                        </span>
+                        <button
                           className="btn-bounce"
                           onClick={toggleReady}
                           style={{
@@ -1764,9 +1767,6 @@ export default function GamePage() {
                         >
                           {myReadyStatus === 'ready' ? '❌ 준비 취소' : '✅ 준비 완료'}
                         </button>
-                        <span style={{ fontSize: '0.95rem', color: 'var(--color-gray-dark)', fontWeight: 700 }}>
-                          방장이 게임을 시작하기를 기다리는 중... ⏳
-                        </span>
                       </div>
                     )}
                   </div>
