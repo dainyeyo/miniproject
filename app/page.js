@@ -13,11 +13,7 @@ export default function GamePage() {
   // AI Image Generator Configuration & State
   // ==========================================
   const AI_CONFIG = {
-    WS_URL:          'ws://localhost:8000/ws/generate',
-    API_BASE:        'http://localhost:8000',
     DEBOUNCE_MS:     700,      // 입력 후 대기 시간 (ms)
-    WS_RECONNECT_MS: 3000,    // WebSocket 재연결 간격 (ms)
-    MAX_RECONNECT:   5,        // 최대 재연결 시도 횟수
   };
 
   // ==========================================
@@ -161,179 +157,7 @@ export default function GamePage() {
   // ==========================================
   // AI 이미지 생성기 엔진 (SD-Turbo Integration)
   // ==========================================
-  const checkAiServerStatus = async () => {
-    try {
-      const res = await fetch(`${AI_CONFIG.API_BASE}/api/status`, { signal: AbortSignal.timeout(5000) });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.json();
-    } catch (err) {
-      console.error('AI 서버 상태 확인 실패:', err.message);
-      return null;
-    }
-  };
-
-  const connectAiWebSocket = () => {
-    if (aiReconnectCountRef.current >= AI_CONFIG.MAX_RECONNECT) {
-      console.warn('WebSocket 재연결 한도 초과 → HTTP 모드로 전환');
-      setAiStatus('ready');
-      setAiStatusText('HTTP 모드 (WebSocket 불가)');
-      return;
-    }
-
-    console.log(`AI WebSocket 연결 시도 (${aiReconnectCountRef.current + 1}/${AI_CONFIG.MAX_RECONNECT})`);
-    setAiStatus('loading');
-    setAiStatusText('WebSocket 연결 중...');
-
-    const ws = new WebSocket(AI_CONFIG.WS_URL);
-    aiWsRef.current = ws;
-
-    ws.addEventListener('open', () => {
-      console.log('✅ AI WebSocket 연결됨');
-      aiReconnectCountRef.current = 0;
-      setAiStatus('ready');
-      setAiStatusText('WebSocket 연결됨');
-      setAiErrorMsg('');
-    });
-
-    ws.addEventListener('message', (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        handleAiServerMessage(data);
-      } catch (err) {
-        console.error('WebSocket 메시지 파싱 실패:', event.data);
-      }
-    });
-
-    ws.addEventListener('close', (event) => {
-      console.warn('AI WebSocket 연결 종료:', event.code, event.reason);
-      setAiIsGenerating(false);
-
-      if (event.code !== 1000) {
-        setAiStatusText(`재연결 대기 중... (${aiReconnectCountRef.current + 1}/${AI_CONFIG.MAX_RECONNECT})`);
-        aiReconnectCountRef.current++;
-        aiReconnectTimerRef.current = setTimeout(connectAiWebSocket, AI_CONFIG.WS_RECONNECT_MS);
-      } else {
-        setAiStatus('ready');
-        setAiStatusText('HTTP 모드');
-      }
-    });
-
-    ws.addEventListener('error', (err) => {
-      console.error('AI WebSocket 오류:', err);
-    });
-  };
-
-  const handleAiServerMessage = (data) => {
-    switch (data.status) {
-      case 'generating':
-        setAiIsGenerating(true);
-        setAiStatus('generating');
-        setAiStatusText('생성 중');
-        setAiErrorMsg('');
-        break;
-
-      case 'done':
-        setAiIsGenerating(false);
-        setAiStatus('ready');
-        setAiStatusText(aiWsRef.current && aiWsRef.current.readyState === WebSocket.OPEN ? 'WebSocket 연결됨' : 'HTTP 모드');
-        if (data.image) {
-          setAiImageSrc(data.image);
-          setAiImageMeta(`"${data.prompt || lastAiPromptRef.current}" — ${new Date().toLocaleTimeString('ko-KR')}`);
-          addSystemMsg(`🤖 AI가 새로운 그림 "${data.prompt || lastAiPromptRef.current}" 생성을 마쳤습니다!`);
-          
-          if (isDrawer) {
-            fetch('/api/rooms/action', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                roomCode,
-                playerId,
-                action: 'draw-ai',
-                payload: { aiImageUrl: data.image }
-              })
-            }).catch(err => console.error('Failed to sync AI image:', err));
-          }
-        }
-        break;
-
-      case 'error':
-        setAiIsGenerating(false);
-        setAiStatus('error');
-        setAiStatusText('오류');
-        setAiErrorMsg(data.error || '알 수 없는 오류가 발생했습니다.');
-        break;
-
-      default:
-        console.warn('알 수 없는 메시지 status:', data.status);
-    }
-  };
-
-  const generateAiViaHTTP = async (prompt, steps) => {
-    setAiIsGenerating(true);
-    setAiStatus('generating');
-    setAiStatusText('생성 중 (HTTP)');
-    try {
-      const response = await fetch(`${AI_CONFIG.API_BASE}/api/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, steps }),
-      });
-      const data = await response.json();
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || `서버 오류 (${response.status})`);
-      }
-      handleAiServerMessage({ status: 'done', image: data.image, prompt: data.prompt });
-    } catch (err) {
-      handleAiServerMessage({ status: 'error', error: err.message });
-    } finally {
-      setAiIsGenerating(false);
-    }
-  };
-
-  const generateAiViaPollinations = async (prompt) => {
-    setAiIsGenerating(true);
-    setAiStatus('generating');
-    setAiStatusText('생성 중 (무료 AI)');
-    try {
-      const encodedPrompt = encodeURIComponent(prompt);
-      const seed = Math.floor(Math.random() * 100000);
-      const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=512&height=512&nologo=true&seed=${seed}`;
-
-      const img = new Image();
-      img.src = imageUrl;
-      img.onload = () => {
-        setAiIsGenerating(false);
-        setAiStatus('ready');
-        setAiStatusText('공공 AI 모드 (서버리스)');
-        setAiImageSrc(imageUrl);
-        setAiImageMeta(`"${prompt}" — Pollinations.ai`);
-        addSystemMsg(`🤖 AI가 새로운 그림 "${prompt}" 생성을 마쳤습니다!`);
-
-        if (isDrawer) {
-          fetch('/api/rooms/action', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              roomCode,
-              playerId,
-              action: 'draw-ai',
-              payload: { aiImageUrl: imageUrl }
-            })
-          }).catch(err => console.error('Failed to sync AI image:', err));
-        }
-      };
-      img.onerror = () => {
-        throw new Error('공공 AI 이미지 로딩에 실패했습니다.');
-      };
-    } catch (err) {
-      setAiIsGenerating(false);
-      setAiStatus('error');
-      setAiStatusText('오류');
-      setAiErrorMsg(err.message);
-    }
-  };
-
-  const requestAiGenerate = (prompt) => {
+  const requestAiGenerate = async (prompt) => {
     if (!prompt || aiIsGenerating) return;
 
     // 제시어(정답)를 프롬프트에 직접 작성하는 어뷰징 행위를 차단하기 위한 정규화 필터링
@@ -347,33 +171,52 @@ export default function GamePage() {
 
     lastAiPromptRef.current = prompt;
     setAiErrorMsg('');
+    setAiIsGenerating(true);
+    setAiStatus('generating');
+    setAiStatusText('그림 생성 중...');
 
-    if (aiWsRef.current && aiWsRef.current.readyState === WebSocket.OPEN) {
-      aiWsRef.current.send(JSON.stringify({ prompt, steps: aiSteps }));
-      setAiIsGenerating(true);
-      setAiStatus('generating');
-      setAiStatusText('생성 중');
-    } else if (aiStatusText.includes('공공 AI')) {
-      generateAiViaPollinations(prompt);
-    } else {
-      generateAiViaHTTP(prompt, aiSteps);
-    }
-  };
+    try {
+      const response = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, steps: aiSteps }),
+      });
 
-  const cleanupAiGenerator = () => {
-    if (aiWsRef.current) {
-      aiWsRef.current.close();
-      aiWsRef.current = null;
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || `서버 오류 (${response.status})`);
+      }
+
+      setAiImageSrc(data.image);
+      const isFallback = data.source === 'pollinations-fallback';
+      const sourceText = isFallback ? '공공 AI (로컬 오프라인)' : '로컬 AI';
+      setAiImageMeta(`"${prompt}" — ${sourceText} (${new Date().toLocaleTimeString('ko-KR')})`);
+      addSystemMsg(`🤖 AI가 새로운 그림 "${prompt}" 생성을 마쳤습니다!`);
+
+      setAiStatus('ready');
+      setAiStatusText(sourceText);
+
+      if (isDrawer) {
+        fetch('/api/rooms/action', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            roomCode,
+            playerId,
+            action: 'draw-ai',
+            payload: { aiImageUrl: data.image }
+          })
+        }).catch(err => console.error('Failed to sync AI image:', err));
+      }
+
+    } catch (err) {
+      console.error('AI 생성 에러:', err);
+      setAiStatus('error');
+      setAiStatusText('오류');
+      setAiErrorMsg(err.message || '이미지 생성 중 오류가 발생했습니다.');
+    } finally {
+      setAiIsGenerating(false);
     }
-    if (aiReconnectTimerRef.current) {
-      clearTimeout(aiReconnectTimerRef.current);
-      aiReconnectTimerRef.current = null;
-    }
-    if (aiDebounceTimerRef.current) {
-      clearTimeout(aiDebounceTimerRef.current);
-      aiDebounceTimerRef.current = null;
-    }
-    aiReconnectCountRef.current = 0;
   };
 
   const triggerAiDrawing = async (keyword) => {
@@ -381,31 +224,8 @@ export default function GamePage() {
     setAiImageMeta('');
     setAiErrorMsg('');
     setAiIsGenerating(false);
-    setAiStatus('loading');
-    setAiStatusText('서버 연결 중...');
-
-    const serverStatus = await checkAiServerStatus();
-
-    if (!serverStatus) {
-      console.log('로컬 AI 서버가 감지되지 않아 Pollinations.ai API로 대체합니다.');
-      setAiStatus('ready');
-      setAiStatusText('공공 AI 모드 (서버리스)');
-      // 플레이어 자율 입력 보장을 위해 자동 프롬프트 세팅 및 즉시 자동 생성을 비활성화하고 입력창을 비웁니다.
-      setAiPrompt('');
-      return;
-    }
-
-    if (!serverStatus.ready) {
-      setAiStatus('error');
-      setAiStatusText('모델 로드 실패');
-      setAiErrorMsg('AI 모델 로드에 실패했습니다. 서버 로그를 확인하세요.');
-      return;
-    }
-
-    console.log(`AI 모델 준비됨 — 디바이스: ${serverStatus.device}`);
-    connectAiWebSocket();
-
-    // 플레이어 자율 입력 보장을 위해 자동 프롬프트 세팅 및 즉시 자동 생성을 비활성화하고 입력창을 비웁니다.
+    setAiStatus('ready');
+    setAiStatusText('준비완료');
     setAiPrompt('');
   };
 
@@ -1300,10 +1120,6 @@ export default function GamePage() {
                       <option value="8 라운드">8 라운드</option>
                     </select>
                   </div>
-                  <div className="custom-option">
-                    <label>인공지능 난이도</label>
-                    <select disabled={!isHost}><option>보통 (Soft)</option><option>매우 창의적 (Wild)</option></select>
-                  </div>
                 </div>
               </section>
             </div>
@@ -1387,9 +1203,9 @@ export default function GamePage() {
                   <div className="ai-gen-layout">
 
                     {/* 서버 상태 뱃지 */}
-                    <div id="ai-status-badge" className={`ai-status-badge ai-st-${aiStatus}`} role="status" aria-live="polite">
+                    <div id="ai-status-badge" className={`ai-status-badge ai-st-${isDrawer ? aiStatus : 'ready'}`} role="status" aria-live="polite">
                       <span className="ai-status-dot"></span>
-                      <span id="ai-status-text">{aiStatusText}</span>
+                      <span id="ai-status-text">{isDrawer ? aiStatusText : 'AI 대기 중'}</span>
                     </div>
 
                     {/* 중앙: 이미지 표시 영역 */}
@@ -1662,6 +1478,7 @@ export default function GamePage() {
 
               <form className="chat-input-bar" onSubmit={handleChatSubmit}>
                 <input
+                  id="chat-input"
                   type="text"
                   placeholder="추측되는 정답을 영어/한글로 입력하세요!"
                   value={chatInput}
