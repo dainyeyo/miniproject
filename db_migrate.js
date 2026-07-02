@@ -18,7 +18,7 @@ if (!databaseUrl || databaseUrl.includes('your_neon_connection_string_here')) {
 
 // 마이그레이션 메인 비즈니스 로직 함수 (SRP 준수)
 async function runMigration() {
-  const csvFilePath = path.join(__dirname, 'words.csv');
+  const csvFilePath = path.join(__dirname, 'words_sorted.csv');
   
   // 2. CSV 파일 데이터 적재 및 정제 (Parsing & Cleaning)
   if (!fs.existsSync(csvFilePath)) {

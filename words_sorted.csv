@@ -1,4 +1,4 @@
-﻿id,word,category,difficulty
+id,word,category,difficulty
 1,고양이,Animal,Medium
 2,강아지,Animal,Medium
 3,사자,Animal,Easy
@@ -425,7 +425,6 @@
 424,골목길,Place,Medium
 425,건널목,Place,Medium
 426,다리,Place,Easy
-427,터널,Place,Easy
 428,분수대,Place,Medium
 429,무지개,Nature,Medium
 430,구름,Nature,Easy
@@ -458,8 +457,6 @@
 457,민들레,Plant,Medium
 458,연꽃,Plant,Easy
 459,나뭇잎,Plant,Medium
-460,튤립,Plant,Easy
-461,은행나무,Plant,Medium
 462,야자수,Plant,Medium
 463,무궁화,Plant,Medium
 464,강아지풀,Plant,Medium
@@ -529,13 +526,11 @@
 528,수영복,Clothing,Medium
 529,잠옷,Clothing,Easy
 530,우비,Clothing,Easy
-531,부츠,Clothing,Easy
 532,슬리퍼,Clothing,Medium
 533,샌들,Clothing,Easy
 534,벨트,Clothing,Easy
 535,귀걸이,Clothing,Medium
 536,팔찌,Clothing,Easy
-537,머리띠,Clothing,Medium
 538,우주복,Clothing,Medium
 539,잠수복,Clothing,Medium
 540,교복,Clothing,Easy
@@ -559,7 +554,6 @@
 558,종,Instrument,Easy
 559,북,Instrument,Easy
 560,첼로,Instrument,Easy
-561,플루트,Instrument,Easy
 562,색소폰,Instrument,Medium
 563,아코디언,Instrument,Medium
 564,탬버린,Instrument,Medium
@@ -568,7 +562,6 @@
 567,실로폰,Instrument,Easy
 568,가야금,Instrument,Medium
 569,장구,Instrument,Easy
-570,전자기타,Instrument,Easy
 571,징,Instrument,Easy
 572,축구,Sport,Easy
 573,농구,Sport,Easy
@@ -592,14 +585,11 @@
 591,씨름,Sport,Easy
 592,승마,Sport,Easy
 593,스노보드,Sport,Medium
-594,피겨스케이팅,Sport,Easy
 595,체조,Sport,Easy
 596,마라톤,Sport,Medium
 597,컬링,Sport,Easy
 598,아이스하키,Sport,Easy
-599,미식축구,Sport,Medium
 600,서핑,Sport,Easy
-601,스쿠버다이빙,Sport,Hard
 602,패러글라이딩,Sport,Hard
 603,암벽등반,Sport,Easy
 604,스카이다이빙,Sport,Medium
